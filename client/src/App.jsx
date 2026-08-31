@@ -80,6 +80,15 @@ async function apiPatch(path, body, token) {
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
+async function apiDelete(path, token) {
+  const res = await fetch(`/api${path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
 
 function Badge({ text, kind }) {
   const map = {
@@ -279,6 +288,32 @@ export default function App() {
     setLoading(true);
     try {
       await apiPatch(`/students/${encodeURIComponent(phone)}`, { active }, adminToken);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function deleteBooking(booking) {
+    if (!window.confirm(`Delete the ${booking.status} booking for ${booking.studentName}?`)) return;
+    setAdminActionError('');
+    setLoading(true);
+    try {
+      await apiDelete(`/bookings/${encodeURIComponent(booking.id)}`, adminToken);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function deleteStudent(studentRecord) {
+    if (!window.confirm(`Delete ${studentRecord.name} and all of their bookings?`)) return;
+    setAdminActionError('');
+    setLoading(true);
+    try {
+      await apiDelete(`/students/${encodeURIComponent(studentRecord.phone)}`, adminToken);
       await refresh();
     } catch (err) {
       setAdminActionError(err.message);
@@ -616,6 +651,11 @@ export default function App() {
                             </button>
                           </div>
                         )}
+                        {b.status !== 'pending' && (
+                          <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteBooking(b)}>
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -643,6 +683,9 @@ export default function App() {
                       onClick={() => toggleStudentActive(s.phone, s.active === false)}
                     >
                       {s.active === false ? 'Enable' : 'Disable'}
+                    </button>
+                    <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteStudent(s)}>
+                      Delete
                     </button>
                   </div>
                 </div>

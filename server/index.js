@@ -208,6 +208,25 @@ app.patch('/api/students/:phone', requireAdmin, (req, res) => {
   res.json({ student });
 });
 
+// Delete a booking (admin only)
+app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
+  const index = db.bookings.findIndex((booking) => booking.id === req.params.id);
+  if (index < 0) return res.status(404).json({ error: 'Booking not found.' });
+  db.bookings.splice(index, 1);
+  saveData(db);
+  res.json({ deleted: true });
+});
+
+// Delete a student and their bookings (admin only)
+app.delete('/api/students/:phone', requireAdmin, (req, res) => {
+  const phone = req.params.phone;
+  if (!db.students[phone]) return res.status(404).json({ error: 'Student not found.' });
+  delete db.students[phone];
+  db.bookings = db.bookings.filter((booking) => booking.phone !== phone);
+  saveData(db);
+  res.json({ deleted: true });
+});
+
 // Toggle whether a specific cabin/date/time slot is blocked off (admin only)
 app.post('/api/slots/toggle', requireAdmin, (req, res) => {
   const { cabin, date, time, duration } = req.body || {};
