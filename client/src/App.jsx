@@ -431,6 +431,20 @@ export default function App() {
           {formatDateLabel(selectedDate)} · Interview hours 8:00 AM – 10:00 PM
         </p>
 
+        {myBookings.filter((b) => b.status === 'approved').map((b) => (
+          <div
+            key={`notice-${b.id}`}
+            className="card"
+            style={{ marginBottom: 12, background: 'var(--approved-soft)', borderColor: 'var(--approved)' }}
+          >
+            <p style={{ margin: 0, lineHeight: 1.6, fontSize: '0.9rem' }}>
+              Hi, {student.name}! Your {b.company} interview request has been approved and scheduled for{' '}
+              {b.date === todayStr() ? 'today' : formatDateLabel(b.date)} at {formatTimeLabel(b.time)} for {b.duration || 30} minutes.
+              Please join the interview at the scheduled time. All the best!
+            </p>
+          </div>
+        ))}
+
         <div className="table" style={{ marginBottom: 32 }}>
           <div className="table-header">
             <div className="table-cell label" style={{ fontWeight: 500 }}>Time</div>
