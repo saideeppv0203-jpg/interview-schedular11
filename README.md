@@ -72,15 +72,18 @@ The simplest option is a host that runs a persistent Node process, such as
 2. Create a new **Web Service** on Render (or Railway) pointing at that repo.
 3. Build command: `npm install && npm run build` (the build script installs the nested server and client dependencies)
 4. Start command: `node server/index.js`
-5. Add the environment variables from the table above in the host's dashboard
+5. Add a **persistent disk** on Render mounted at `/var/data` and set `DATA_DIR=/var/data`.
+   The included `render.yaml` configures this automatically for Render Blueprint deployments.
+6. Add the environment variables from the table above in the host's dashboard
    (don't commit `.env` to git — it's already git-ignored).
-6. Deploy. The URL the host gives you is your live site.
+7. Deploy. The URL the host gives you is your live site.
 
 ### Important: data persistence
 
-This project stores data in `server/data.json` on disk. That's simple and
-works well for local use and for hosts with a **persistent disk** (Railway's
-default volumes, or Render's paid persistent disk add-on).
+This project stores data in `server/data.json` on disk. In production, set
+`DATA_DIR` to the path of a persistent disk (Render's paid persistent disk
+mounted at `/var/data`, or Railway's volume). The server creates the directory
+when it starts, and students/bookings remain available after deployments.
 
 If you deploy to a platform with an **ephemeral filesystem** (e.g. Render's
 free tier without an added disk, or serverless platforms like Vercel), the

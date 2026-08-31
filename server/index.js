@@ -12,6 +12,7 @@ app.use(express.json());
 // (e.g. Render persistent disks). Defaults to this folder for local dev.
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vishnavqa@gmail.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Vishnavqa02@';

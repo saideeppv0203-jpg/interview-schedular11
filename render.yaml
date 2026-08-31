@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: interview-scheduler
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.js
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: interview-scheduler-data
+      mountPath: /var/data
+      sizeGB: 1
