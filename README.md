@@ -70,7 +70,7 @@ The simplest option is a host that runs a persistent Node process, such as
 
 1. Push this project to a GitHub repo.
 2. Create a new **Web Service** on Render (or Railway) pointing at that repo.
-3. Build command: `npm install && npm run build && npm install --prefix server`
+3. Build command: `npm install && npm run build` (the build script installs the nested server and client dependencies)
 4. Start command: `node server/index.js`
 5. Add the environment variables from the table above in the host's dashboard
    (don't commit `.env` to git — it's already git-ignored).
