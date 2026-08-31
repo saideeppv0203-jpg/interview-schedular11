@@ -572,11 +572,15 @@ export default function App() {
     const rejectedCount = bookings.filter((b) => b.status === 'rejected').length;
 
     const filtered = bookings
-      .filter((b) => adminFilter === 'all' || b.status === adminFilter)
+      .filter((b) => {
+        if (adminFilter === 'today') return b.date === todayStr();
+        return adminFilter === 'all' || b.status === adminFilter;
+      })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
     const filters = [
       { key: 'all', label: 'All' },
+      { key: 'today', label: "Today's interviews" },
       { key: 'pending', label: 'Pending' },
       { key: 'approved', label: 'Approved' },
       { key: 'rejected', label: 'Rejected' },
