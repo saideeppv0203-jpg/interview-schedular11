@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 app.use(cors());
@@ -12,7 +13,10 @@ app.use(express.json());
 // (e.g. Render persistent disks). Defaults to this folder for local dev.
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
+const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'data.sqlite');
 fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const dbConnection = new sqlite3.Database(DB_PATH);
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vishnavqa@gmail.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Vishnavqa02@';
@@ -23,7 +27,11 @@ const DAY_START_MIN = 8 * 60;
 const DAY_END_MIN = 22 * 60;
 const VALID_DURATIONS = [30, 60];
 
-function loadData() {
+function getDefaultData() {
+  return { students: {}, bookings: [], blockedSlots: [] };
+}
+
+function loadLegacyData() {
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
@@ -33,14 +41,116 @@ function loadData() {
       blockedSlots: parsed.blockedSlots || [],
     };
   } catch (e) {
-    return { students: {}, bookings: [], blockedSlots: [] };
+    return null;
   }
 }
-function saveData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+function ensureSchema() {
+  return new Promise((resolve, reject) => {
+    dbConnection.exec(
+      `
+        CREATE TABLE IF NOT EXISTS students (
+          phone TEXT PRIMARY KEY,
+          data TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS bookings (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS blocked_slots (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL
+        );
+      `,
+      (error) => (error ? reject(error) : resolve())
+    );
+  });
 }
 
-let db = loadData();
+function loadDataFromDatabase() {
+  return new Promise((resolve, reject) => {
+    const students = {};
+    const bookings = [];
+    const blockedSlots = [];
+
+    dbConnection.all('SELECT phone, data FROM students', (studentError, rows) => {
+      if (studentError) return reject(studentError);
+
+      rows.forEach(({ phone, data }) => {
+        students[phone] = JSON.parse(data);
+      });
+
+      dbConnection.all('SELECT data FROM bookings', (bookingError, bookingRows) => {
+        if (bookingError) return reject(bookingError);
+
+        bookingRows.forEach(({ data }) => {
+          bookings.push(JSON.parse(data));
+        });
+
+        dbConnection.all('SELECT data FROM blocked_slots', (blockedError, blockedRows) => {
+          if (blockedError) return reject(blockedError);
+
+          blockedRows.forEach(({ data }) => {
+            blockedSlots.push(JSON.parse(data));
+          });
+
+          resolve({ students, bookings, blockedSlots });
+        });
+      });
+    });
+  });
+}
+
+function saveData(data) {
+  const normalized = {
+    students: data.students || {},
+    bookings: data.bookings || [],
+    blockedSlots: data.blockedSlots || [],
+  };
+
+  dbConnection.serialize(() => {
+    dbConnection.run('DELETE FROM students');
+    dbConnection.run('DELETE FROM bookings');
+    dbConnection.run('DELETE FROM blocked_slots');
+
+    const studentStmt = dbConnection.prepare('INSERT INTO students (phone, data) VALUES (?, ?)');
+    Object.entries(normalized.students).forEach(([phone, record]) => {
+      studentStmt.run(phone, JSON.stringify(record));
+    });
+    studentStmt.finalize();
+
+    const bookingStmt = dbConnection.prepare('INSERT INTO bookings (id, data) VALUES (?, ?)');
+    normalized.bookings.forEach((booking) => {
+      bookingStmt.run(booking.id, JSON.stringify(booking));
+    });
+    bookingStmt.finalize();
+
+    const blockedStmt = dbConnection.prepare('INSERT INTO blocked_slots (id, data) VALUES (?, ?)');
+    normalized.blockedSlots.forEach((slot, index) => {
+      blockedStmt.run(`${slot.cabin}-${slot.date}-${slot.time}-${slot.duration || 30}-${index}`, JSON.stringify(slot));
+    });
+    blockedStmt.finalize();
+  });
+}
+
+async function initializeDatabase() {
+  await ensureSchema();
+
+  const dbFromDatabase = await loadDataFromDatabase().catch(() => getDefaultData());
+  const legacyData = loadLegacyData();
+
+  let nextDb = getDefaultData();
+  if (Object.keys(dbFromDatabase.students).length || dbFromDatabase.bookings.length || dbFromDatabase.blockedSlots.length) {
+    nextDb = dbFromDatabase;
+  } else if (legacyData) {
+    nextDb = legacyData;
+  }
+
+  db = nextDb;
+  saveData(db);
+}
+
+let db = getDefaultData();
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization || '';
@@ -267,6 +377,13 @@ if (fs.existsSync(clientDist)) {
 }
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Interview scheduler server running on port ${PORT}`);
-});
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Interview scheduler server running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize SQLite database:', error);
+    process.exit(1);
+  });

@@ -2,4 +2,6 @@ node_modules/
 .env
 client/dist/
 server/data.json
+server/data.sqlite
+*.sqlite
 .DS_Store

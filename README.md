@@ -11,8 +11,8 @@ A booking site for interview slots across two cabins.
   a running count of total / pending / approved / rejected interviews.
 
 Stack: a React (Vite) frontend and a small Node/Express backend that stores
-data in a JSON file on disk. No external accounts or paid services required
-to run it.
+data in SQLite on disk. No external accounts or paid services required to
+run it.
 
 ## Project layout
 
@@ -80,15 +80,16 @@ The simplest option is a host that runs a persistent Node process, such as
 
 ### Important: data persistence
 
-This project stores data in `server/data.json` on disk. In production, set
-`DATA_DIR` to the path of a persistent disk (Render's paid persistent disk
-mounted at `/var/data`, or Railway's volume). The server creates the directory
-when it starts, and students/bookings remain available after deployments.
+This project stores data in SQLite (`server/data.sqlite` by default, or a
+custom `DB_PATH` if you set one). In production, set `DATA_DIR` to the path of
+a persistent disk (Render's paid persistent disk mounted at `/var/data`, or
+Railway's volume). The server creates the data directory when it starts, and
+students/bookings remain available after deployments.
 
 If you deploy to a platform with an **ephemeral filesystem** (e.g. Render's
 free tier without an added disk, or serverless platforms like Vercel), the
-data file will reset whenever the service restarts or redeploys — students
-and bookings would disappear. If that's a risk for you, two options:
+database file will reset whenever the service restarts or redeploys —
+students and bookings would disappear. If that's a risk for you, two options:
 
 - Add a small persistent disk on your host (cheap, usually ~$1/month), or
 - Swap the JSON file for a real hosted database (e.g. a free-tier Postgres
