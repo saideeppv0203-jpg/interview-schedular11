@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
@@ -14,9 +15,11 @@ app.use(express.json());
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'data.sqlite');
+const DATABASE_URL = process.env.DATABASE_URL || '';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const dbConnection = new sqlite3.Database(DB_PATH);
+const postgresPool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+const dbConnection = !postgresPool ? new sqlite3.Database(DB_PATH) : null;
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vishnavqa@gmail.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Vishnavqa02@';
@@ -46,6 +49,23 @@ function loadLegacyData() {
 }
 
 function ensureSchema() {
+  if (postgresPool) {
+    return postgresPool.query(`
+      CREATE TABLE IF NOT EXISTS students (
+        phone TEXT PRIMARY KEY,
+        data JSONB NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS bookings (
+        id TEXT PRIMARY KEY,
+        data JSONB NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS blocked_slots (
+        id TEXT PRIMARY KEY,
+        data JSONB NOT NULL
+      );
+    `);
+  }
+
   return new Promise((resolve, reject) => {
     dbConnection.exec(
       `
@@ -68,6 +88,26 @@ function ensureSchema() {
 }
 
 function loadDataFromDatabase() {
+  if (postgresPool) {
+    return postgresPool
+      .query('SELECT phone, data FROM students')
+      .then((studentResult) => {
+        const students = {};
+        studentResult.rows.forEach(({ phone, data }) => {
+          students[phone] = data;
+        });
+
+        return postgresPool.query('SELECT data FROM bookings').then((bookingResult) => {
+          const bookings = bookingResult.rows.map(({ data }) => data);
+
+          return postgresPool.query('SELECT data FROM blocked_slots').then((blockedResult) => {
+            const blockedSlots = blockedResult.rows.map(({ data }) => data);
+            return { students, bookings, blockedSlots };
+          });
+        });
+      });
+  }
+
   return new Promise((resolve, reject) => {
     const students = {};
     const bookings = [];
@@ -101,35 +141,81 @@ function loadDataFromDatabase() {
   });
 }
 
-function saveData(data) {
+async function saveData(data) {
   const normalized = {
     students: data.students || {},
     bookings: data.bookings || [],
     blockedSlots: data.blockedSlots || [],
   };
 
-  dbConnection.serialize(() => {
-    dbConnection.run('DELETE FROM students');
-    dbConnection.run('DELETE FROM bookings');
-    dbConnection.run('DELETE FROM blocked_slots');
+  if (postgresPool) {
+    const client = await postgresPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM students');
+      await client.query('DELETE FROM bookings');
+      await client.query('DELETE FROM blocked_slots');
 
-    const studentStmt = dbConnection.prepare('INSERT INTO students (phone, data) VALUES (?, ?)');
-    Object.entries(normalized.students).forEach(([phone, record]) => {
-      studentStmt.run(phone, JSON.stringify(record));
-    });
-    studentStmt.finalize();
+      const studentValues = Object.entries(normalized.students).map(([phone, record]) => [phone, JSON.stringify(record)]);
+      if (studentValues.length) {
+        const insertStudents = `INSERT INTO students (phone, data) VALUES ${studentValues.map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`).join(', ')}`;
+        const studentParams = studentValues.flat();
+        await client.query(insertStudents, studentParams);
+      }
 
-    const bookingStmt = dbConnection.prepare('INSERT INTO bookings (id, data) VALUES (?, ?)');
-    normalized.bookings.forEach((booking) => {
-      bookingStmt.run(booking.id, JSON.stringify(booking));
-    });
-    bookingStmt.finalize();
+      const bookingValues = normalized.bookings.map((booking) => [booking.id, JSON.stringify(booking)]);
+      if (bookingValues.length) {
+        const insertBookings = `INSERT INTO bookings (id, data) VALUES ${bookingValues.map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`).join(', ')}`;
+        const bookingParams = bookingValues.flat();
+        await client.query(insertBookings, bookingParams);
+      }
 
-    const blockedStmt = dbConnection.prepare('INSERT INTO blocked_slots (id, data) VALUES (?, ?)');
-    normalized.blockedSlots.forEach((slot, index) => {
-      blockedStmt.run(`${slot.cabin}-${slot.date}-${slot.time}-${slot.duration || 30}-${index}`, JSON.stringify(slot));
+      const blockedValues = normalized.blockedSlots.map((slot, index) => [`${slot.cabin}-${slot.date}-${slot.time}-${slot.duration || 30}-${index}`, JSON.stringify(slot)]);
+      if (blockedValues.length) {
+        const insertBlocked = `INSERT INTO blocked_slots (id, data) VALUES ${blockedValues.map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`).join(', ')}`;
+        const blockedParams = blockedValues.flat();
+        await client.query(insertBlocked, blockedParams);
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    dbConnection.serialize(() => {
+      dbConnection.run('DELETE FROM students');
+      dbConnection.run('DELETE FROM bookings');
+      dbConnection.run('DELETE FROM blocked_slots');
+
+      const studentStmt = dbConnection.prepare('INSERT INTO students (phone, data) VALUES (?, ?)');
+      Object.entries(normalized.students).forEach(([phone, record]) => {
+        studentStmt.run(phone, JSON.stringify(record));
+      });
+      studentStmt.finalize();
+
+      const bookingStmt = dbConnection.prepare('INSERT INTO bookings (id, data) VALUES (?, ?)');
+      normalized.bookings.forEach((booking) => {
+        bookingStmt.run(booking.id, JSON.stringify(booking));
+      });
+      bookingStmt.finalize();
+
+      const blockedStmt = dbConnection.prepare('INSERT INTO blocked_slots (id, data) VALUES (?, ?)');
+      normalized.blockedSlots.forEach((slot, index) => {
+        blockedStmt.run(`${slot.cabin}-${slot.date}-${slot.time}-${slot.duration || 30}-${index}`, JSON.stringify(slot));
+      });
+      blockedStmt.finalize();
+
+      dbConnection.run('SELECT 1', (error) => {
+        if (error) return reject(error);
+        resolve();
+      });
     });
-    blockedStmt.finalize();
   });
 }
 
@@ -147,10 +233,16 @@ async function initializeDatabase() {
   }
 
   db = nextDb;
-  saveData(db);
+  await saveData(db);
 }
 
 let db = getDefaultData();
+
+function persistData() {
+  return saveData(db).catch((error) => {
+    console.error('Failed to save data:', error);
+  });
+}
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization || '';
@@ -208,7 +300,7 @@ app.post('/api/register', (req, res) => {
     registeredAt: new Date().toISOString(),
   };
   db.students[cleanPhone] = record;
-  saveData(db);
+  persistData();
   res.json({ student: record });
 });
 
@@ -275,7 +367,7 @@ app.post('/api/bookings', (req, res) => {
     requestedAt: new Date().toISOString(),
   };
   db.bookings.push(booking);
-  saveData(db);
+  persistData();
   res.json({ booking });
 });
 
@@ -302,7 +394,7 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   const booking = db.bookings.find((b) => b.id === req.params.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
   booking.status = status;
-  saveData(db);
+  persistData();
   res.json({ booking });
 });
 
@@ -315,7 +407,7 @@ app.patch('/api/students/:phone', requireAdmin, (req, res) => {
   const student = db.students[req.params.phone];
   if (!student) return res.status(404).json({ error: 'Student not found.' });
   student.active = active;
-  saveData(db);
+  persistData();
   res.json({ student });
 });
 
@@ -324,7 +416,7 @@ app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
   const index = db.bookings.findIndex((booking) => booking.id === req.params.id);
   if (index < 0) return res.status(404).json({ error: 'Booking not found.' });
   db.bookings.splice(index, 1);
-  saveData(db);
+  persistData();
   res.json({ deleted: true });
 });
 
@@ -334,7 +426,7 @@ app.delete('/api/students/:phone', requireAdmin, (req, res) => {
   if (!db.students[phone]) return res.status(404).json({ error: 'Student not found.' });
   delete db.students[phone];
   db.bookings = db.bookings.filter((booking) => booking.phone !== phone);
-  saveData(db);
+  persistData();
   res.json({ deleted: true });
 });
 
@@ -351,7 +443,7 @@ app.post('/api/slots/toggle', requireAdmin, (req, res) => {
   );
   if (idx >= 0) {
     db.blockedSlots.splice(idx, 1);
-    saveData(db);
+    persistData();
     return res.json({ blocked: false });
   }
 
@@ -363,7 +455,7 @@ app.post('/api/slots/toggle', requireAdmin, (req, res) => {
   }
 
   db.blockedSlots.push({ cabin, date, time, duration: dur });
-  saveData(db);
+  persistData();
   res.json({ blocked: true });
 });
 
@@ -384,6 +476,6 @@ initializeDatabase()
     });
   })
   .catch((error) => {
-    console.error('Failed to initialize SQLite database:', error);
+    console.error('Failed to initialize the database:', error);
     process.exit(1);
   });

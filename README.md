@@ -11,8 +11,9 @@ A booking site for interview slots across two cabins.
   a running count of total / pending / approved / rejected interviews.
 
 Stack: a React (Vite) frontend and a small Node/Express backend that stores
-data in SQLite on disk. No external accounts or paid services required to
-run it.
+data in PostgreSQL when `DATABASE_URL` is configured, with a SQLite fallback
+for local development. No external accounts or paid services required to run
+it locally.
 
 ## Project layout
 
@@ -80,21 +81,17 @@ The simplest option is a host that runs a persistent Node process, such as
 
 ### Important: data persistence
 
-This project stores data in SQLite (`server/data.sqlite` by default, or a
-custom `DB_PATH` if you set one). In production, set `DATA_DIR` to the path of
-a persistent disk (Render's paid persistent disk mounted at `/var/data`, or
-Railway's volume). The server creates the data directory when it starts, and
-students/bookings remain available after deployments.
+For production, the recommended setup is a managed PostgreSQL database.
+Set `DATABASE_URL` to your Postgres connection string and the app will use it
+for persistence. If `DATABASE_URL` is not set, the app falls back to SQLite
+(`server/data.sqlite` by default, or a custom `DB_PATH` if you set one).
 
-If you deploy to a platform with an **ephemeral filesystem** (e.g. Render's
-free tier without an added disk, or serverless platforms like Vercel), the
-database file will reset whenever the service restarts or redeploys —
-students and bookings would disappear. If that's a risk for you, two options:
-
-- Add a small persistent disk on your host (cheap, usually ~$1/month), or
-- Swap the JSON file for a real hosted database (e.g. a free-tier Postgres
-  on Supabase or Neon, or MongoDB Atlas). Happy to help make that change if
-  you tell me which host/database you'd like to use.
+This means local development still works without extra setup, while hosted
+production deployments can rely on a durable database. If you deploy to a
+platform with an **ephemeral filesystem** and do not set `DATABASE_URL`, the
+SQLite file will reset whenever the service restarts or redeploys — students
+and bookings would disappear. The reliable production approach is to provide a
+managed Postgres database such as Supabase or Neon.
 
 ## Security note
 
