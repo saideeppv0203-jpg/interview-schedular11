@@ -170,6 +170,27 @@ body {
   gap: 8px;
   align-items: center;
 }
+.admin-create-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.admin-create-form strong {
+  margin-right: auto;
+  font-size: 0.85rem;
+}
+.admin-create-form .search-input {
+  width: 170px;
+}
+.cabin-create-form {
+  margin-top: 8px;
+}
 .availability-list {
   margin-top: 18px;
 }

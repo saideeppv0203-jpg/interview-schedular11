@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
-const CABINS = ['Cabin 1', 'Cabin 2'];
+const DEFAULT_CABINS = ['Cabin 1', 'Cabin 2'];
 const DAY_START_MIN = 8 * 60; // 8:00 AM
 const DAY_END_MIN = 22 * 60; // 10:00 PM
 const DURATIONS = [
@@ -150,6 +150,9 @@ export default function App() {
   const [bookings, setBookings] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [disabledCabins, setDisabledCabins] = useState([]);
+  const [cabins, setCabins] = useState(DEFAULT_CABINS);
+  const [newCabin, setNewCabin] = useState('');
+  const [newStudent, setNewStudent] = useState({ name: '', domain: '', phone: '' });
   const [activityHistory, setActivityHistory] = useState([]);
   const [interviewerAvailability, setInterviewerAvailability] = useState([]);
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -205,11 +208,12 @@ export default function App() {
   const [availabilityTime, setAvailabilityTime] = useState('09:00');
   const [availabilityDuration, setAvailabilityDuration] = useState(30);
   const [rescheduleBooking, setRescheduleBooking] = useState(null);
-  const [rescheduleCabin, setRescheduleCabin] = useState(CABINS[0]);
+  const [rescheduleCabin, setRescheduleCabin] = useState(DEFAULT_CABINS[0]);
   const [rescheduleDate, setRescheduleDate] = useState(todayStr());
   const [rescheduleTime, setRescheduleTime] = useState('09:00');
   const [rescheduleDuration, setRescheduleDuration] = useState(30);
   const PAGE_SIZE = 8;
+  const CABINS = cabins;
 
   const refresh = useCallback(async () => {
     setStateLoading(true);
@@ -219,6 +223,7 @@ export default function App() {
       setBookings(data.bookings || []);
       setBlockedSlots(data.blockedSlots || []);
       setDisabledCabins(data.disabledCabins || []);
+      setCabins(data.cabins || DEFAULT_CABINS);
       setActivityHistory(data.activityHistory || []);
       setInterviewerAvailability(data.interviewerAvailability || []);
       setLastRefreshed(new Date());
@@ -607,6 +612,31 @@ export default function App() {
       await refresh();
     } catch (err) {
       setAdminActionError(err.message);
+    }
+
+    async function addCabin(e) {
+      e.preventDefault();
+      if (!newCabin.trim()) return;
+      setLoading(true);
+      setAdminActionError('');
+      try {
+        await apiPost('/cabins', { cabin: newCabin.trim() }, adminToken);
+        setNewCabin('');
+        await refresh();
+      } catch (err) { setAdminActionError(err.message); }
+      setLoading(false);
+    }
+
+    async function addStudent(e) {
+      e.preventDefault();
+      setLoading(true);
+      setAdminActionError('');
+      try {
+        await apiPost('/admin/students', newStudent, adminToken);
+        setNewStudent({ name: '', domain: '', phone: '' });
+        await refresh();
+      } catch (err) { setAdminActionError(err.message); }
+      setLoading(false);
     }
     setLoading(false);
   }
@@ -1548,6 +1578,13 @@ export default function App() {
 
         {adminTab === 'students' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <form className="admin-create-form" onSubmit={addStudent}>
+              <strong>Add student</strong>
+              <input className="search-input" value={newStudent.name} onChange={(e) => setNewStudent({ ...newStudent, name: e.target.value })} placeholder="Full name" />
+              <input className="search-input" value={newStudent.domain} onChange={(e) => setNewStudent({ ...newStudent, domain: e.target.value })} placeholder="Domain" />
+              <input className="search-input" value={newStudent.phone} onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })} placeholder="Phone number" />
+              <button className="btn btn-primary" disabled={loading}>Add student</button>
+            </form>
             <div className="search-row">
               <input className="search-input" value={adminStudentSearch} onChange={(e) => { setAdminStudentSearch(e.target.value); setAdminStudentPage(1); }} placeholder="Search name, domain, or phone…" aria-label="Search students" />
             </div>
@@ -1615,6 +1652,11 @@ export default function App() {
                 </div>;
               })}
             </div>
+            <form className="admin-create-form cabin-create-form" onSubmit={addCabin}>
+              <strong>Add cabin</strong>
+              <input className="search-input" value={newCabin} onChange={(e) => setNewCabin(e.target.value)} placeholder="e.g. Cabin 3" aria-label="New cabin name" />
+              <button className="btn btn-primary" disabled={loading}>Add cabin</button>
+            </form>
 
             <div className="table slot-table">
               <div className="table-header">

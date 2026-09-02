@@ -38,10 +38,10 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'dev-admin-token-change-me';
 const DAY_START_MIN = 8 * 60;
 const DAY_END_MIN = 22 * 60;
 const VALID_DURATIONS = [30, 60];
-const VALID_CABINS = ['Cabin 1', 'Cabin 2'];
+const DEFAULT_CABINS = ['Cabin 1', 'Cabin 2'];
 
 function getDefaultData() {
-  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], activityHistory: [], interviewerAvailability: [] };
+  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], cabins: DEFAULT_CABINS, activityHistory: [], interviewerAvailability: [] };
 }
 
 function loadLegacyData() {
@@ -55,6 +55,7 @@ function loadLegacyData() {
       disabledCabins: parsed.disabledCabins || [],
       activityHistory: parsed.activityHistory || [],
       interviewerAvailability: parsed.interviewerAvailability || [],
+      cabins: parsed.cabins || DEFAULT_CABINS,
     };
   } catch (e) {
     return null;
@@ -126,7 +127,7 @@ function loadDataFromDatabase() {
             return postgresPool.query('SELECT key, data FROM scheduler_settings').then((settingsResult) => {
               const settings = {};
               settingsResult.rows.forEach(({ key, data }) => { settings[key] = data; });
-              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] };
+              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], cabins: settings.cabins || DEFAULT_CABINS, activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] };
             });
           });
         });
@@ -163,7 +164,7 @@ function loadDataFromDatabase() {
             if (settingsError) return reject(settingsError);
             const settings = {};
             settingsRows.forEach(({ key, data }) => { settings[key] = JSON.parse(data); });
-            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] });
+            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], cabins: settings.cabins || DEFAULT_CABINS, activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] });
           });
         });
       });
@@ -179,6 +180,7 @@ async function saveData(data) {
     disabledCabins: data.disabledCabins || [],
     activityHistory: data.activityHistory || [],
     interviewerAvailability: data.interviewerAvailability || [],
+    cabins: data.cabins || DEFAULT_CABINS,
   };
 
   if (postgresPool) {
@@ -213,6 +215,7 @@ async function saveData(data) {
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['disabledCabins', JSON.stringify(normalized.disabledCabins)]);
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['activityHistory', JSON.stringify(normalized.activityHistory)]);
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['interviewerAvailability', JSON.stringify(normalized.interviewerAvailability)]);
+      await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['cabins', JSON.stringify(normalized.cabins)]);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -253,6 +256,7 @@ async function saveData(data) {
       settingsStmt.run('disabledCabins', JSON.stringify(normalized.disabledCabins));
       settingsStmt.run('activityHistory', JSON.stringify(normalized.activityHistory));
       settingsStmt.run('interviewerAvailability', JSON.stringify(normalized.interviewerAvailability));
+      settingsStmt.run('cabins', JSON.stringify(normalized.cabins));
       settingsStmt.finalize();
 
       dbConnection.run('SELECT 1', (error) => {
@@ -374,7 +378,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Full app state: student directory + all bookings + admin-blocked slots
 app.get('/api/state', (req, res) => {
-  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], activityHistory: db.activityHistory || [], interviewerAvailability: db.interviewerAvailability || [] });
+  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], cabins: db.cabins || DEFAULT_CABINS, activityHistory: db.activityHistory || [], interviewerAvailability: db.interviewerAvailability || [] });
 });
 
 // Register a new student, or log an existing one in by phone number
@@ -415,7 +419,7 @@ app.post('/api/bookings', (req, res) => {
   if (!cabin || !date || !time || !phone || !company || !round) {
     return res.status(400).json({ error: 'Missing required booking fields.' });
   }
-  if (!VALID_CABINS.includes(cabin)) {
+  if (!(db.cabins || DEFAULT_CABINS).includes(cabin)) {
     return res.status(400).json({ error: 'Invalid cabin.' });
   }
 
@@ -506,6 +510,17 @@ app.post('/api/admin/login', (req, res) => {
   res.status(401).json({ error: 'Incorrect email or password.' });
 });
 
+app.post('/api/admin/students', requireAdmin, (req, res) => {
+  const { name, domain, phone } = req.body || {};
+  const cleanPhone = String(phone || '').trim();
+  if (!name || !domain || !cleanPhone) return res.status(400).json({ error: 'Name, domain, and phone are required.' });
+  if (db.students[cleanPhone]) return res.status(409).json({ error: 'A student with this phone number already exists.' });
+  const student = { name: String(name).trim(), domain: String(domain).trim(), phone: cleanPhone, active: true, registeredAt: new Date().toISOString() };
+  db.students[cleanPhone] = student;
+  persistData();
+  res.json({ student });
+});
+
 // Approve / reject a booking (admin only)
 app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   const { status, date, time, duration, phone, cabin, cancelReason } = req.body || {};
@@ -514,7 +529,7 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
     const bookingToMove = db.bookings.find((b) => b.id === req.params.id);
     if (!bookingToMove) return res.status(404).json({ error: 'Booking not found.' });
     const targetCabin = cabin || bookingToMove.cabin;
-    if (!VALID_CABINS.includes(targetCabin)) return res.status(400).json({ error: 'Invalid cabin.' });
+    if (!(db.cabins || DEFAULT_CABINS).includes(targetCabin)) return res.status(400).json({ error: 'Invalid cabin.' });
     if ((db.disabledCabins || []).includes(targetCabin)) return res.status(409).json({ error: `${targetCabin} is currently unavailable.` });
     const validation = validateSchedule(date || bookingToMove.date, time || bookingToMove.time, dur, bookingToMove.timezone);
     if (validation) return res.status(400).json({ error: validation });
@@ -629,7 +644,7 @@ app.patch('/api/student/bookings/:id', (req, res) => {
   }
   const dur = Number(duration || booking.duration || 30);
   const targetCabin = cabin || booking.cabin;
-  if (!VALID_CABINS.includes(targetCabin)) return res.status(400).json({ error: 'Invalid cabin.' });
+  if (!(db.cabins || DEFAULT_CABINS).includes(targetCabin)) return res.status(400).json({ error: 'Invalid cabin.' });
   const validation = validateSchedule(date, time, dur, timezone || booking.timezone);
   if (validation) return res.status(400).json({ error: validation });
   if ((db.disabledCabins || []).includes(targetCabin)) return res.status(409).json({ error: `${targetCabin} is currently unavailable.` });
@@ -684,7 +699,7 @@ app.patch('/api/students/:phone', requireAdmin, (req, res) => {
 
 app.patch('/api/cabins/:cabin', requireAdmin, (req, res) => {
   const cabin = req.params.cabin;
-  if (!VALID_CABINS.includes(cabin) || typeof req.body.enabled !== 'boolean') {
+  if (!(db.cabins || DEFAULT_CABINS).includes(cabin) || typeof req.body.enabled !== 'boolean') {
     return res.status(400).json({ error: 'Cabin and enabled state are required.' });
   }
   const disabled = new Set(db.disabledCabins || []);
@@ -698,6 +713,16 @@ app.patch('/api/cabins/:cabin', requireAdmin, (req, res) => {
   db.disabledCabins = Array.from(disabled);
   persistData();
   res.json({ cabin, enabled: req.body.enabled });
+});
+
+app.post('/api/cabins', requireAdmin, (req, res) => {
+  const cabin = String(req.body && req.body.cabin || '').trim();
+  if (!cabin || cabin.length > 40) return res.status(400).json({ error: 'Enter a cabin name up to 40 characters.' });
+  db.cabins = db.cabins || DEFAULT_CABINS;
+  if (db.cabins.some((item) => item.toLowerCase() === cabin.toLowerCase())) return res.status(409).json({ error: 'That cabin already exists.' });
+  db.cabins.push(cabin);
+  persistData();
+  res.json({ cabins: db.cabins });
 });
 
 // Delete a booking (admin only)
