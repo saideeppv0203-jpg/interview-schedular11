@@ -164,6 +164,39 @@ body {
   color: var(--accent-dark);
   font-weight: 600;
 }
+.availability-form {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.availability-list {
+  margin-top: 18px;
+}
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 0.8rem;
+}
+.bulk-actions span {
+  margin-right: auto;
+  font-weight: 600;
+}
+.booking-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 7px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
 .admin-filters {
   margin-bottom: 18px;
   padding: 12px 14px 2px;
@@ -875,6 +908,8 @@ input {
   .admin-header-actions { align-items: flex-end; flex-direction: column; gap: 10px; }
   .admin-filter-fields { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
+  .availability-form { grid-template-columns: 1fr 1fr; }
+  .availability-form .btn { grid-column: 1 / -1; }
   .admin-filter-fields .search-input { width: 100% !important; }
   .student-actions { justify-content: stretch; }
   .student-actions .btn { flex: 1 1 140px; }

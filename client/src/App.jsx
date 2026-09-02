@@ -151,6 +151,7 @@ export default function App() {
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [disabledCabins, setDisabledCabins] = useState([]);
   const [activityHistory, setActivityHistory] = useState([]);
+  const [interviewerAvailability, setInterviewerAvailability] = useState([]);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState('');
@@ -198,6 +199,11 @@ export default function App() {
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   const [adminRequestPage, setAdminRequestPage] = useState(1);
   const [adminStudentPage, setAdminStudentPage] = useState(1);
+  const [selectedBookingIds, setSelectedBookingIds] = useState([]);
+  const [availabilityInterviewer, setAvailabilityInterviewer] = useState('');
+  const [availabilityDate, setAvailabilityDate] = useState(todayStr());
+  const [availabilityTime, setAvailabilityTime] = useState('09:00');
+  const [availabilityDuration, setAvailabilityDuration] = useState(30);
   const [rescheduleBooking, setRescheduleBooking] = useState(null);
   const [rescheduleCabin, setRescheduleCabin] = useState(CABINS[0]);
   const [rescheduleDate, setRescheduleDate] = useState(todayStr());
@@ -214,6 +220,7 @@ export default function App() {
       setBlockedSlots(data.blockedSlots || []);
       setDisabledCabins(data.disabledCabins || []);
       setActivityHistory(data.activityHistory || []);
+      setInterviewerAvailability(data.interviewerAvailability || []);
       setLastRefreshed(new Date());
       setLoadError('');
     } catch (e) {
@@ -395,6 +402,40 @@ export default function App() {
         item.date === booking.date &&
         rangesOverlap(item.time, item.duration || 30, booking.time, booking.duration || 30));
       if (duplicate && !window.confirm(`Warning: ${booking.studentName} already has ${duplicate.company} at ${formatDateLabel(duplicate.date)} ${formatTimeLabel(duplicate.time)}. Approve this overlapping booking anyway?`)) return;
+    }
+
+    async function bulkUpdateBookings(status) {
+      if (!selectedBookingIds.length) return;
+      if (!window.confirm(`${status === 'approved' ? 'Approve' : 'Reject'} ${selectedBookingIds.length} selected requests?`)) return;
+      setLoading(true);
+      setAdminActionError('');
+      try {
+        await apiPost('/bookings/bulk-status', { ids: selectedBookingIds, status }, adminToken);
+        setSelectedBookingIds([]);
+        await refresh();
+      } catch (err) {
+        setAdminActionError(err.message);
+      }
+      setLoading(false);
+    }
+
+    async function toggleInterviewerAvailability(e) {
+      e.preventDefault();
+      if (!availabilityInterviewer.trim()) return;
+      setLoading(true);
+      setAdminActionError('');
+      try {
+        await apiPost('/interviewer-availability/toggle', {
+          interviewer: availabilityInterviewer.trim(),
+          date: availabilityDate,
+          time: availabilityTime,
+          duration: availabilityDuration,
+        }, adminToken);
+        await refresh();
+      } catch (err) {
+        setAdminActionError(err.message);
+      }
+      setLoading(false);
     }
     if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : status === 'cancelled' ? 'Cancel' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
@@ -1095,6 +1136,7 @@ export default function App() {
       { key: 'students', label: 'Students' },
       { key: 'slots', label: 'Slot availability' },
       { key: 'activity', label: 'Activity history' },
+      { key: 'interviewers', label: 'Interviewer availability' },
       { key: 'settings', label: 'Settings' },
     ];
 
@@ -1378,6 +1420,31 @@ export default function App() {
           </div>
         )}
 
+        {adminTab === 'interviewers' && (
+          <section className="card admin-section settings-card">
+            <p className="admin-kicker">AVAILABILITY</p>
+            <h3 className="serif">Interviewer availability</h3>
+            <p className="settings-description">Mark interviewer time as available for planning and assignment.</p>
+            <form className="availability-form" onSubmit={toggleInterviewerAvailability}>
+              <input className="search-input" value={availabilityInterviewer} onChange={(e) => setAvailabilityInterviewer(e.target.value)} placeholder="Interviewer name" aria-label="Interviewer name" />
+              <input className="search-input" type="date" value={availabilityDate} onChange={(e) => setAvailabilityDate(e.target.value)} aria-label="Availability date" />
+              <input className="search-input" type="time" value={availabilityTime} onChange={(e) => setAvailabilityTime(e.target.value)} aria-label="Availability time" />
+              <select className="search-input" value={availabilityDuration} onChange={(e) => setAvailabilityDuration(Number(e.target.value))} aria-label="Availability duration">
+                {DURATIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+              <button className="btn btn-primary" disabled={loading}>Toggle availability</button>
+            </form>
+            <div className="availability-list">
+              {interviewerAvailability.length === 0 ? <p className="empty-inline">No interviewer availability added yet.</p> : interviewerAvailability.map((item) => (
+                <div className="settings-row" key={`${item.interviewer}-${item.date}-${item.time}-${item.duration}`}>
+                  <span><strong>{item.interviewer}</strong> · {formatDateLabel(item.date)} at {formatTimeLabel(item.time)}</span>
+                  <span>{item.duration || 30} min</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {adminTab === 'requests' && (
           <>
             <details className="admin-filters" open>
@@ -1407,6 +1474,13 @@ export default function App() {
                 </div>
               </div>
             </details>
+            {filtered.some((booking) => booking.status === 'pending') && (
+              <div className="bulk-actions">
+                <span>{selectedBookingIds.length} selected</span>
+                <button className="btn btn-small btn-primary" disabled={!selectedBookingIds.length || loading} onClick={() => bulkUpdateBookings('approved')}>Approve selected</button>
+                <button className="btn btn-small btn-outline" disabled={!selectedBookingIds.length || loading} onClick={() => bulkUpdateBookings('rejected')}>Reject selected</button>
+              </div>
+            )}
 
             {filtered.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No requests in this view.</p>
@@ -1416,6 +1490,7 @@ export default function App() {
                   <div key={b.id} className="card booking-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '0.9rem' }}>
+                        {b.status === 'pending' && <label className="booking-select"><input type="checkbox" checked={selectedBookingIds.includes(b.id)} onChange={(e) => setSelectedBookingIds((ids) => e.target.checked ? [...ids, b.id] : ids.filter((id) => id !== b.id))} /> Select</label>}
                         <div style={{ fontWeight: 500 }}>
                           {b.studentName} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>· {b.domain}</span>
                         </div>

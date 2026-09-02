@@ -41,7 +41,7 @@ const VALID_DURATIONS = [30, 60];
 const VALID_CABINS = ['Cabin 1', 'Cabin 2'];
 
 function getDefaultData() {
-  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], activityHistory: [] };
+  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], activityHistory: [], interviewerAvailability: [] };
 }
 
 function loadLegacyData() {
@@ -54,6 +54,7 @@ function loadLegacyData() {
       blockedSlots: parsed.blockedSlots || [],
       disabledCabins: parsed.disabledCabins || [],
       activityHistory: parsed.activityHistory || [],
+      interviewerAvailability: parsed.interviewerAvailability || [],
     };
   } catch (e) {
     return null;
@@ -125,7 +126,7 @@ function loadDataFromDatabase() {
             return postgresPool.query('SELECT key, data FROM scheduler_settings').then((settingsResult) => {
               const settings = {};
               settingsResult.rows.forEach(({ key, data }) => { settings[key] = data; });
-              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [] };
+              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] };
             });
           });
         });
@@ -162,7 +163,7 @@ function loadDataFromDatabase() {
             if (settingsError) return reject(settingsError);
             const settings = {};
             settingsRows.forEach(({ key, data }) => { settings[key] = JSON.parse(data); });
-            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [] });
+            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [], interviewerAvailability: settings.interviewerAvailability || [] });
           });
         });
       });
@@ -177,6 +178,7 @@ async function saveData(data) {
     blockedSlots: data.blockedSlots || [],
     disabledCabins: data.disabledCabins || [],
     activityHistory: data.activityHistory || [],
+    interviewerAvailability: data.interviewerAvailability || [],
   };
 
   if (postgresPool) {
@@ -210,6 +212,7 @@ async function saveData(data) {
       }
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['disabledCabins', JSON.stringify(normalized.disabledCabins)]);
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['activityHistory', JSON.stringify(normalized.activityHistory)]);
+      await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['interviewerAvailability', JSON.stringify(normalized.interviewerAvailability)]);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -249,6 +252,7 @@ async function saveData(data) {
       const settingsStmt = dbConnection.prepare('INSERT INTO scheduler_settings (key, data) VALUES (?, ?)');
       settingsStmt.run('disabledCabins', JSON.stringify(normalized.disabledCabins));
       settingsStmt.run('activityHistory', JSON.stringify(normalized.activityHistory));
+      settingsStmt.run('interviewerAvailability', JSON.stringify(normalized.interviewerAvailability));
       settingsStmt.finalize();
 
       dbConnection.run('SELECT 1', (error) => {
@@ -370,7 +374,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Full app state: student directory + all bookings + admin-blocked slots
 app.get('/api/state', (req, res) => {
-  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], activityHistory: db.activityHistory || [] });
+  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], activityHistory: db.activityHistory || [], interviewerAvailability: db.interviewerAvailability || [] });
 });
 
 // Register a new student, or log an existing one in by phone number
@@ -563,6 +567,29 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   res.json({ booking });
 });
 
+app.post('/api/bookings/bulk-status', requireAdmin, (req, res) => {
+  const { ids, status } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || !['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Booking ids and approved or rejected status are required.' });
+  }
+  const selected = db.bookings.filter((booking) => ids.includes(booking.id) && booking.status === 'pending');
+  if (selected.length !== ids.length) return res.status(409).json({ error: 'Some selected requests are no longer pending.' });
+  if (status === 'approved') {
+    for (const booking of selected) {
+      const conflict = db.bookings.find((other) => other.id !== booking.id && other.status !== 'rejected' && other.status !== 'cancelled' &&
+        ((other.cabin === booking.cabin && other.date === booking.date && rangesOverlap(other.time, other.duration || 30, booking.time, booking.duration || 30)) ||
+         (other.phone === booking.phone && other.date === booking.date && rangesOverlap(other.time, other.duration || 30, booking.time, booking.duration || 30))));
+      if (conflict) return res.status(409).json({ error: `Cannot approve ${booking.studentName}: it overlaps an active booking.` });
+    }
+  }
+  selected.forEach((booking) => {
+    booking.status = status;
+    recordActivity(status, booking, `Admin bulk changed status to ${status}.`);
+  });
+  persistData();
+  res.json({ updated: selected.length });
+});
+
 function validateSchedule(date, time, duration, timezone) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !/^\d{2}:\d{2}$/.test(time || '')) {
     return 'A valid date and time are required.';
@@ -723,6 +750,22 @@ app.post('/api/slots/toggle', requireAdmin, (req, res) => {
   db.blockedSlots.push({ cabin, date, time, duration: dur });
   persistData();
   res.json({ blocked: true });
+});
+
+app.post('/api/interviewer-availability/toggle', requireAdmin, (req, res) => {
+  const { interviewer, date, time, duration } = req.body || {};
+  if (!interviewer || !date || !time) return res.status(400).json({ error: 'Interviewer, date and time are required.' });
+  db.interviewerAvailability = db.interviewerAvailability || [];
+  const dur = VALID_DURATIONS.includes(Number(duration)) ? Number(duration) : 30;
+  const index = db.interviewerAvailability.findIndex((item) => item.interviewer === interviewer && item.date === date && item.time === time && (item.duration || 30) === dur);
+  if (index >= 0) {
+    db.interviewerAvailability.splice(index, 1);
+    persistData();
+    return res.json({ available: false });
+  }
+  db.interviewerAvailability.push({ interviewer: String(interviewer).trim(), date, time, duration: dur });
+  persistData();
+  res.json({ available: true });
 });
 
 // Serve the built React app in production (after `npm run build`)
