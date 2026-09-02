@@ -94,16 +94,16 @@ body {
 }
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 24px;
   padding: 4px;
-  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-alt);
 }
 .admin-tab {
-  flex: 1 0 auto;
+  flex: 1 1 150px;
   padding: 9px 14px;
   border-radius: 6px;
   background: transparent;
@@ -111,6 +111,7 @@ body {
   font: inherit;
   font-size: 0.85rem;
   white-space: nowrap;
+  cursor: pointer;
 }
 .admin-tab.active {
   background: var(--panel);
@@ -925,6 +926,19 @@ input {
   .landing-page { padding-top: 28px; }
   .landing-hero { grid-template-columns: 1fr; gap: 24px; padding: 28px 22px; }
   .landing-features { grid-template-columns: 1fr; }
+  .admin-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .admin-tab {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 5px;
+    font-size: 0.76rem;
+    line-height: 1.2;
+    white-space: normal;
+  }
   .admin-header { align-items: flex-start; }
   .admin-header-actions { align-items: flex-end; flex-direction: column; gap: 10px; }
   .admin-filter-fields { grid-template-columns: 1fr; }
