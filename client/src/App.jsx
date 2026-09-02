@@ -49,6 +49,19 @@ function formatTimeLabel(t) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
 }
+function dateKeyFromLocalDate(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+function calendarDays(monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return [
+    ...Array(firstDay.getDay()).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => dateKeyFromLocalDate(new Date(year, month, index + 1))),
+  ];
+}
 function isPastSlot(dateStr, timeStr) {
   return new Date(`${dateStr}T${timeStr}:00`).getTime() <= Date.now();
 }
@@ -133,6 +146,7 @@ export default function App() {
   const [adminToken, setAdminToken] = useState(null);
   const [adminFilter, setAdminFilter] = useState('all');
   const [adminDateFilter, setAdminDateFilter] = useState(null);
+  const [adminCalendarMonth, setAdminCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [adminTab, setAdminTab] = useState('requests'); // requests, students, slots
   const [adminSlotDate, setAdminSlotDate] = useState(todayStr());
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
@@ -617,6 +631,11 @@ export default function App() {
         }, {}))
         .sort((a, b) => a.name.localeCompare(b.name))
       : [];
+    const calendarDateCounts = bookings.reduce((counts, booking) => {
+      counts[booking.date] = (counts[booking.date] || 0) + 1;
+      return counts;
+    }, {});
+    const calendarDates = calendarDays(adminCalendarMonth);
 
     return (
       <div className="container">
@@ -637,6 +656,65 @@ export default function App() {
               <div className="stat-label">{label}</div>
             </div>
           ))}
+        </div>
+
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="calendar-heading">
+            <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Interview calendar</h3>
+            <div className="calendar-navigation">
+              <button
+                className="btn btn-small btn-outline"
+                onClick={() => setAdminCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                aria-label="Previous month"
+              >
+                ←
+              </button>
+              <strong>
+                {adminCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </strong>
+              <button
+                className="btn btn-small btn-outline"
+                onClick={() => setAdminCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                aria-label="Next month"
+              >
+                →
+              </button>
+            </div>
+          </div>
+          <div className="calendar-grid calendar-weekdays">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div key={day} className="calendar-weekday">{day}</div>
+            ))}
+            {calendarDates.map((date, index) => (
+              date ? (
+                <button
+                  key={date}
+                  className={`calendar-day ${adminDateFilter === date ? 'selected' : ''}`}
+                  onClick={() => {
+                    setAdminDateFilter(date);
+                    setAdminFilter('all');
+                    setAdminTab('requests');
+                  }}
+                >
+                  <span>{Number(date.slice(-2))}</span>
+                  {calendarDateCounts[date] ? <strong>{calendarDateCounts[date]}</strong> : <span />}
+                </button>
+              ) : <div key={`empty-${index}`} className="calendar-day empty" />
+            ))}
+          </div>
+          {adminDateFilter && (
+            <div className="calendar-selection">
+              <strong>{formatDateLabel(adminDateFilter)}</strong>
+              <span>{calendarDateCounts[adminDateFilter] || 0} interview{calendarDateCounts[adminDateFilter] === 1 ? '' : 's'}</span>
+              <div className="calendar-student-names">
+                {selectedDateStudentCounts.length
+                  ? selectedDateStudentCounts.map((studentCount) => (
+                    <span key={studentCount.name}>{studentCount.name}</span>
+                  ))
+                  : <span>No students scheduled.</span>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card" style={{ marginBottom: 24 }}>
