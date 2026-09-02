@@ -114,10 +114,10 @@ body {
   cursor: pointer;
 }
 .admin-tab.active {
-  background: var(--panel);
-  color: var(--accent-dark);
+  background: var(--accent);
+  color: #fff;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(30, 36, 48, 0.12);
+  box-shadow: 0 2px 5px rgba(32, 67, 69, 0.2);
 }
 .admin-tabs {
   box-shadow: 0 4px 12px rgba(30, 36, 48, 0.05);
@@ -938,11 +938,6 @@ input {
     font-size: 0.76rem;
     line-height: 1.2;
     white-space: normal;
-  }
-  .admin-tab.active {
-    background: var(--accent);
-    color: #fff;
-    box-shadow: 0 2px 5px rgba(32, 67, 69, 0.2);
   }
   .admin-header { align-items: flex-start; }
   .admin-header-actions { align-items: flex-end; flex-direction: column; gap: 10px; }
