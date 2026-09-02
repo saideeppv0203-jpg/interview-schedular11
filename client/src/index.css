@@ -212,6 +212,26 @@ input {
   color: var(--ink);
   font-size: 1.35rem;
 }
+.daily-student-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.daily-student-count {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  background: var(--panel-alt);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+.daily-student-count strong {
+  color: var(--accent-dark);
+}
 
 .modal-backdrop {
   position: fixed;

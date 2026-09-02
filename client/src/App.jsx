@@ -606,6 +606,17 @@ export default function App() {
         rejected: dayBookings.filter((booking) => booking.status === 'rejected').length,
       };
     });
+    const selectedDateStudentCounts = adminDateFilter
+      ? Object.values(bookings
+        .filter((booking) => booking.date === adminDateFilter)
+        .reduce((counts, booking) => {
+          const key = booking.phone || booking.studentName;
+          if (!counts[key]) counts[key] = { name: booking.studentName || 'Unknown student', count: 0 };
+          counts[key].count += 1;
+          return counts;
+        }, {}))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      : [];
 
     return (
       <div className="container">
@@ -658,13 +669,26 @@ export default function App() {
             ))}
           </div>
           {adminDateFilter && (
-            <button
-              className="link-btn"
-              style={{ marginTop: 10 }}
-              onClick={() => setAdminDateFilter(null)}
-            >
-              Show all dates
-            </button>
+            <>
+              <div className="daily-student-counts">
+                <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>
+                  {formatDateLabel(adminDateFilter)} — interviews per student
+                </div>
+                {selectedDateStudentCounts.length === 0 ? (
+                  <div style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>No interviews scheduled.</div>
+                ) : (
+                  selectedDateStudentCounts.map((studentCount) => (
+                    <div key={studentCount.name} className="daily-student-count">
+                      <span>{studentCount.name}</span>
+                      <strong>{studentCount.count}</strong>
+                    </div>
+                  ))
+                )}
+              </div>
+              <button className="link-btn" style={{ marginTop: 10 }} onClick={() => setAdminDateFilter(null)}>
+                Show all dates
+              </button>
+            </>
           )}
         </div>
 
