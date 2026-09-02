@@ -939,6 +939,11 @@ input {
     line-height: 1.2;
     white-space: normal;
   }
+  .admin-tab.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 5px rgba(32, 67, 69, 0.2);
+  }
   .admin-header { align-items: flex-start; }
   .admin-header-actions { align-items: flex-end; flex-direction: column; gap: 10px; }
   .admin-filter-fields { grid-template-columns: 1fr; }
