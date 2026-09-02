@@ -42,6 +42,29 @@ body {
   margin: 0 auto;
   padding: 32px 20px;
 }
+.landing-page { max-width: 960px; padding-top: 64px; }
+.landing-hero {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(220px, 0.75fr);
+  gap: 42px; align-items: center; padding: 44px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--accent-dark), var(--accent)); color: #fff;
+  box-shadow: 0 16px 34px rgba(32, 67, 69, 0.2);
+}
+.landing-eyebrow { margin: 0 0 12px; color: #f5d58a; font-size: .68rem; font-weight: 700; letter-spacing: .16em; }
+.landing-hero h1 { margin: 0; font-size: clamp(2.2rem, 5vw, 3.5rem); line-height: 1.05; }
+.landing-hero h1 span { color: #f5d58a; }
+.landing-description { max-width: 480px; margin: 18px 0 24px; color: rgba(255,255,255,.78); font-size: 1rem; line-height: 1.6; }
+.landing-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.landing-actions .btn-outline { border-color: rgba(255,255,255,.35); background: transparent; color: #fff; }
+.landing-trust { margin: 22px 0 0; color: rgba(255,255,255,.62); font-size: .75rem; }
+.landing-visual { display: flex; flex-direction: column; gap: 10px; padding: 30px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: rgba(255,255,255,.1); }
+.landing-calendar-icon { color: #f5d58a; font-size: 3.8rem; line-height: 1; }
+.landing-visual strong { font-size: 1.25rem; line-height: 1.2; }
+.landing-visual span { color: rgba(255,255,255,.68); font-size: .78rem; line-height: 1.5; }
+.landing-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.landing-features > div { display: flex; flex-direction: column; gap: 5px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
+.landing-features strong { color: var(--accent); font-size: .7rem; }
+.landing-features span { font-weight: 600; }
+.landing-features small { color: var(--ink-soft); font-size: .76rem; line-height: 1.4; }
 .admin-container {
   max-width: 1120px;
 }
@@ -795,6 +818,9 @@ input {
 }
 @media (max-width: 560px) {
   .container { padding: 20px 12px; }
+  .landing-page { padding-top: 28px; }
+  .landing-hero { grid-template-columns: 1fr; gap: 24px; padding: 28px 22px; }
+  .landing-features { grid-template-columns: 1fr; }
   .admin-header { align-items: flex-start; }
   .admin-header-actions { align-items: flex-end; flex-direction: column; gap: 10px; }
   .admin-filter-fields { grid-template-columns: 1fr; }

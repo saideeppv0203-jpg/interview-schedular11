@@ -587,22 +587,30 @@ export default function App() {
   // ---------- LANDING ----------
   if (view === 'landing') {
     return (
-      <div className="container">
-        <h1 className="serif" style={{ fontSize: '2rem', lineHeight: 1.15, marginBottom: 8 }}>
-          Book your interview slot
-        </h1>
-        <p style={{ color: 'var(--ink-soft)', maxWidth: 420, marginBottom: 32 }}>
-          Two interview cabins, real-time availability, 8:00 AM to 10:00 PM. Register once,
-          then pick a free slot and enter the company and round you're interviewing for.
-        </p>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={() => setView('student-auth')}>
-            Continue as a student
-          </button>
-          <button className="btn btn-outline" onClick={() => setView('admin-login')}>
-            Admin sign in
-          </button>
+      <div className="container landing-page">
+        <section className="landing-hero">
+          <div className="landing-copy">
+            <p className="landing-eyebrow">PLACEMENT OPERATIONS PLATFORM</p>
+            <h1 className="serif">Welcome to <span>Placement Assist</span></h1>
+            <p className="landing-description">A simple, organized way to book, manage, and track interview schedules in real time.</p>
+            <div className="landing-actions">
+              <button className="btn btn-primary" onClick={() => setView('student-auth')}>Student login</button>
+              <button className="btn btn-outline" onClick={() => setView('admin-login')}>Admin login</button>
+            </div>
+            <p className="landing-trust">Secure scheduling · Live availability · Clear status updates</p>
+          </div>
+          <div className="landing-visual" aria-hidden="true">
+            <div className="landing-calendar-icon">▦</div>
+            <strong>Interview day,<br />organized.</strong>
+            <span>Pick a date. Find a slot. Stay on track.</span>
+          </div>
+        </section>
+        <div className="landing-features">
+          <div><strong>01</strong><span>Easy booking</span><small>Choose a suitable date and time.</small></div>
+          <div><strong>02</strong><span>Live availability</span><small>See open cabins before booking.</small></div>
+          <div><strong>03</strong><span>Clear updates</span><small>Track approval and interview status.</small></div>
         </div>
+        <AppFooter />
       </div>
     );
   }
