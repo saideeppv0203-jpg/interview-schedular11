@@ -1102,9 +1102,15 @@ export default function App() {
         <div className="admin-header">
           <div>
             <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Admin dashboard</h2>
-            <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
+            <p className="admin-kicker">OPERATIONS OVERVIEW</p>
+            <p className="loading-text">Updated {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
-          <button className="link-btn" onClick={logoutAdmin}>Sign out</button>
+          <div className="admin-header-actions">
+            <button className="btn btn-small btn-outline" onClick={refresh} disabled={stateLoading}>
+              {stateLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <button className="link-btn" onClick={logoutAdmin}>Sign out</button>
+          </div>
         </div>
         {loadError && (
           <div className="card retry-banner">
@@ -1114,7 +1120,7 @@ export default function App() {
         )}
         {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
 
-        <div className="stat-grid">
+        <div className="stat-grid admin-summary">
           {[
             ["Today's total", total, 'var(--ink)'],
             ["Today's approved", approvedCount, 'var(--approved)'],
@@ -1128,7 +1134,7 @@ export default function App() {
           ))}
         </div>
         <p className="loading-text">Today's availability: {CABINS.map((cabin) => `${cabin} ${slotsForDuration(30).filter((time) => isSlotFree(cabin, todayStr(), time, 30).free).length}`).join(' · ')} free 30-minute slots</p>
-        <div className="filter-row">
+        <div className="filter-row admin-quick-actions">
           <button className="filter-chip" onClick={() => { setAdminDateFilter(todayStr()); setAdminFilter('all'); setAdminTab('requests'); }}>Today</button>
           <button className="filter-chip" onClick={() => { setAdminDateFilter(null); setAdminFilter('pending'); setAdminTab('requests'); }}>Pending</button>
           <button className="filter-chip" onClick={() => { setAdminDateFilter(null); setAdminFilter('approved'); setAdminTab('requests'); }}>Approved</button>
@@ -1138,7 +1144,7 @@ export default function App() {
           <div className="card empty-state" style={{ margin: '0 0 20px' }}>No interviews today.</div>
         )}
 
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card admin-section" style={{ marginBottom: 24 }}>
           <div className="calendar-heading">
             <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Interview calendar</h3>
             <div className="calendar-navigation">
@@ -1218,7 +1224,7 @@ export default function App() {
           <AppFooter />
         </div>
 
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card admin-section" style={{ marginBottom: 24 }}>
           <h3 className="serif" style={{ fontSize: '1.15rem', margin: '0 0 4px' }}>Interviews by day</h3>
           <p style={{ color: 'var(--ink-soft)', fontSize: '0.85rem', margin: '0 0 12px' }}>
             Upcoming interview requests for the next {DAYS_AHEAD} days
