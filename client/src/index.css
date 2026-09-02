@@ -113,7 +113,8 @@ body {
   white-space: nowrap;
   cursor: pointer;
 }
-.admin-tab.active {
+.admin-tabs .admin-tab.active,
+.admin-tabs .admin-tab:focus-visible {
   background: var(--accent);
   color: #fff;
   font-weight: 600;
