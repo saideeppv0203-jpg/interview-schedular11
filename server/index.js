@@ -41,7 +41,7 @@ const VALID_DURATIONS = [30, 60];
 const VALID_CABINS = ['Cabin 1', 'Cabin 2'];
 
 function getDefaultData() {
-  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [] };
+  return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], activityHistory: [] };
 }
 
 function loadLegacyData() {
@@ -53,6 +53,7 @@ function loadLegacyData() {
       bookings: parsed.bookings || [],
       blockedSlots: parsed.blockedSlots || [],
       disabledCabins: parsed.disabledCabins || [],
+      activityHistory: parsed.activityHistory || [],
     };
   } catch (e) {
     return null;
@@ -124,7 +125,7 @@ function loadDataFromDatabase() {
             return postgresPool.query('SELECT key, data FROM scheduler_settings').then((settingsResult) => {
               const settings = {};
               settingsResult.rows.forEach(({ key, data }) => { settings[key] = data; });
-              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [] };
+              return { students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [] };
             });
           });
         });
@@ -161,7 +162,7 @@ function loadDataFromDatabase() {
             if (settingsError) return reject(settingsError);
             const settings = {};
             settingsRows.forEach(({ key, data }) => { settings[key] = JSON.parse(data); });
-            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [] });
+            resolve({ students, bookings, blockedSlots, disabledCabins: settings.disabledCabins || [], activityHistory: settings.activityHistory || [] });
           });
         });
       });
@@ -175,6 +176,7 @@ async function saveData(data) {
     bookings: data.bookings || [],
     blockedSlots: data.blockedSlots || [],
     disabledCabins: data.disabledCabins || [],
+    activityHistory: data.activityHistory || [],
   };
 
   if (postgresPool) {
@@ -207,6 +209,7 @@ async function saveData(data) {
         await client.query(insertBlocked, blockedParams);
       }
       await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['disabledCabins', JSON.stringify(normalized.disabledCabins)]);
+      await client.query('INSERT INTO scheduler_settings (key, data) VALUES ($1, $2)', ['activityHistory', JSON.stringify(normalized.activityHistory)]);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -245,6 +248,7 @@ async function saveData(data) {
 
       const settingsStmt = dbConnection.prepare('INSERT INTO scheduler_settings (key, data) VALUES (?, ?)');
       settingsStmt.run('disabledCabins', JSON.stringify(normalized.disabledCabins));
+      settingsStmt.run('activityHistory', JSON.stringify(normalized.activityHistory));
       settingsStmt.finalize();
 
       dbConnection.run('SELECT 1', (error) => {
@@ -279,7 +283,7 @@ async function initializeDatabase() {
     const legacyData = loadLegacyData();
 
     let nextDb = getDefaultData();
-    if (Object.keys(dbFromDatabase.students).length || dbFromDatabase.bookings.length || dbFromDatabase.blockedSlots.length || dbFromDatabase.disabledCabins.length) {
+    if (Object.keys(dbFromDatabase.students).length || dbFromDatabase.bookings.length || dbFromDatabase.blockedSlots.length || dbFromDatabase.disabledCabins.length || dbFromDatabase.activityHistory.length) {
       nextDb = dbFromDatabase;
     } else if (legacyData) {
       nextDb = legacyData;
@@ -305,6 +309,23 @@ function persistData() {
   return saveData(db).catch((error) => {
     console.error('Failed to save data:', error);
   });
+}
+
+function recordActivity(action, booking, details) {
+  if (!db.activityHistory) db.activityHistory = [];
+  db.activityHistory.unshift({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    action,
+    bookingId: booking && booking.id,
+    studentName: booking && booking.studentName,
+    phone: booking && booking.phone,
+    company: booking && booking.company,
+    date: booking && booking.date,
+    time: booking && booking.time,
+    details: details || '',
+    at: new Date().toISOString(),
+  });
+  db.activityHistory = db.activityHistory.slice(0, 200);
 }
 
 function requireAdmin(req, res, next) {
@@ -349,7 +370,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Full app state: student directory + all bookings + admin-blocked slots
 app.get('/api/state', (req, res) => {
-  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [] });
+  res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], activityHistory: db.activityHistory || [] });
 });
 
 // Register a new student, or log an existing one in by phone number
@@ -510,8 +531,10 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
     bookingToMove.duration = dur;
     bookingToMove.cabin = targetCabin;
     if (phone) bookingToMove.phone = phone;
+    const previousStatus = bookingToMove.status;
     if (status) bookingToMove.status = status;
     if (status === 'cancelled' && cancelReason) bookingToMove.cancelReason = String(cancelReason).trim();
+    if (status && status !== previousStatus) recordActivity(status === 'approved' ? 'approved' : status === 'cancelled' ? 'cancelled' : status, bookingToMove, `Admin changed status from ${previousStatus} to ${status}.`);
     persistData();
     return res.json({ booking: bookingToMove });
   }
@@ -520,8 +543,10 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   }
   const booking = db.bookings.find((b) => b.id === req.params.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  const previousStatus = booking.status;
   booking.status = status;
   if (status === 'cancelled' && cancelReason) booking.cancelReason = String(cancelReason).trim();
+  if (status !== previousStatus) recordActivity(status === 'approved' ? 'approved' : status === 'cancelled' ? 'cancelled' : status, booking, `Admin changed status from ${previousStatus} to ${status}.`);
   persistData();
   res.json({ booking });
 });
@@ -559,6 +584,7 @@ app.patch('/api/student/bookings/:id', (req, res) => {
     booking.status = 'cancelled';
     booking.cancelReason = String(cancelReason).trim();
     booking.cancelledAt = new Date().toISOString();
+    recordActivity('cancelled', booking, 'Student cancelled the interview.');
     persistData();
     return res.json({ booking });
   }
@@ -623,6 +649,12 @@ app.patch('/api/cabins/:cabin', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Cabin and enabled state are required.' });
   }
   const disabled = new Set(db.disabledCabins || []);
+  if (!req.body.enabled) {
+    const activeInterview = db.bookings.find((booking) => booking.cabin === cabin && booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date >= new Date().toISOString().slice(0, 10));
+    if (activeInterview) {
+      return res.status(409).json({ error: `${cabin} has active interviews. Reschedule or cancel them before disabling the cabin.` });
+    }
+  }
   if (req.body.enabled) disabled.delete(cabin); else disabled.add(cabin);
   db.disabledCabins = Array.from(disabled);
   persistData();
@@ -634,6 +666,7 @@ app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
   const index = db.bookings.findIndex((booking) => booking.id === req.params.id);
   if (index < 0) return res.status(404).json({ error: 'Booking not found.' });
   db.bookings.splice(index, 1);
+  recordActivity('deleted', booking, 'Admin deleted the booking.');
   persistData();
   res.json({ deleted: true });
 });
@@ -642,8 +675,11 @@ app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
 app.delete('/api/students/:phone', requireAdmin, (req, res) => {
   const phone = req.params.phone;
   if (!db.students[phone]) return res.status(404).json({ error: 'Student not found.' });
+  const deletedBookings = db.bookings.filter((booking) => booking.phone === phone);
   delete db.students[phone];
   db.bookings = db.bookings.filter((booking) => booking.phone !== phone);
+  deletedBookings.forEach((booking) => recordActivity('deleted', booking, 'Admin deleted the student and booking.'));
+  if (deletedBookings.length === 0) recordActivity('deleted', { studentName: student.name, phone }, 'Admin deleted the student account.');
   persistData();
   res.json({ deleted: true });
 });

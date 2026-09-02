@@ -8,6 +8,7 @@ const DURATIONS = [
   { value: 60, label: '1 hour' },
 ];
 const DAYS_AHEAD = 14;
+const ADMIN_CONTACT = 'vishnavqa@gmail.com';
 
 function pad2(n) { return n.toString().padStart(2, '0'); }
 function minutesToHHMM(mins) {
@@ -131,6 +132,9 @@ export default function App() {
   const [bookings, setBookings] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [disabledCabins, setDisabledCabins] = useState([]);
+  const [activityHistory, setActivityHistory] = useState([]);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState('');
   const [stateLoading, setStateLoading] = useState(false);
 
@@ -143,7 +147,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [duration, setDuration] = useState(30);
   const [studentCalendarMonth, setStudentCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [bookingSuccess, setBookingSuccess] = useState('');
+  const [bookingSuccess, setBookingSuccess] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileDomain, setProfileDomain] = useState('');
@@ -169,6 +173,9 @@ export default function App() {
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
   const [adminActionError, setAdminActionError] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
+  const [adminCabinFilter, setAdminCabinFilter] = useState('all');
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('all');
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   const [adminRequestPage, setAdminRequestPage] = useState(1);
   const [adminStudentPage, setAdminStudentPage] = useState(1);
@@ -187,6 +194,8 @@ export default function App() {
       setBookings(data.bookings || []);
       setBlockedSlots(data.blockedSlots || []);
       setDisabledCabins(data.disabledCabins || []);
+      setActivityHistory(data.activityHistory || []);
+      setLastRefreshed(new Date());
       setLoadError('');
     } catch (e) {
       console.error('Failed to load state', e);
@@ -234,6 +243,11 @@ export default function App() {
     const id = setInterval(refresh, 15000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const dateOptions = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(i)), []);
   const maxDate = dateOptions[dateOptions.length - 1];
@@ -301,7 +315,7 @@ export default function App() {
     }
     setLoading(true);
     try {
-      await apiPost('/bookings', {
+      const { booking } = await apiPost('/bookings', {
         cabin: modalSlot.cabin,
         date: modalSlot.date,
         time: modalSlot.time,
@@ -314,9 +328,13 @@ export default function App() {
         interviewer: interviewer.trim(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
-      await refresh();
       setModalSlot(null);
-      setBookingSuccess(`Booking request sent for ${company.trim()} on ${formatDateLabel(modalSlot.date)} at ${formatTimeLabel(modalSlot.time)}.`);
+      setBookingSuccess({
+        company: booking.company, round: booking.round, interviewer: booking.interviewer,
+        cabin: booking.cabin, date: booking.date, time: booking.time,
+        duration: booking.duration, status: booking.status,
+      });
+      await refresh();
     } catch (err) {
       setModalError(err.message);
     }
@@ -463,6 +481,7 @@ export default function App() {
       setModalError('Please provide a reason for cancelling.');
       return;
     }
+    if (!window.confirm(`Cancel your ${cancelBooking.company} interview on ${formatDateLabel(cancelBooking.date)} at ${formatTimeLabel(cancelBooking.time)}?`)) return;
     setLoading(true);
     setModalError('');
     try {
@@ -493,6 +512,7 @@ export default function App() {
       setProfileError('Name and domain are required.');
       return;
     }
+    if (!window.confirm('Save these profile changes?')) return;
     setLoading(true);
     setProfileError('');
     try {
@@ -519,6 +539,30 @@ export default function App() {
       setAdminActionError(err.message);
     }
     setLoading(false);
+  }
+
+  async function copyBookingDetails(booking) {
+    const details = `${booking.company} · ${booking.round}\n${formatDateLabel(booking.date)} at ${formatTimeLabel(booking.time)}\n${booking.cabin} · ${booking.duration || 30} minutes\nInterviewer: ${booking.interviewer || 'Not assigned'}\nStatus: ${statusLabel(booking.status)}`;
+    try {
+      await navigator.clipboard.writeText(details);
+      setBookingSuccess({ message: 'Booking details copied to your clipboard.' });
+    } catch (error) {
+      setBookingSuccess({ message: details });
+    }
+
+    function exportDailySchedule(date) {
+      const rows = bookings.filter((booking) => booking.date === date && booking.status !== 'cancelled' && booking.status !== 'rejected');
+      const headers = ['Date', 'Time', 'Cabin', 'Student', 'Phone', 'Company', 'Round', 'Interviewer', 'Duration', 'Status'];
+      const values = rows.map((booking) => [booking.date, booking.time, booking.cabin, booking.studentName, booking.phone, booking.company, booking.round, booking.interviewer || '', booking.duration || 30, booking.status]);
+      const csv = [headers, ...values].map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `interview-schedule-${date}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
   // ---------- LANDING ----------
@@ -582,6 +626,10 @@ export default function App() {
     const myBookings = bookings
       .filter((b) => b.phone === student.phone)
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    const historyBookings = myBookings.filter((b) => (
+      (!historyStatus || historyStatus === 'all' || b.status === historyStatus) &&
+      (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
+    ));
 
     const times = slotsForDuration(duration).filter((time) => !isPastSlot(selectedDate, time));
     const studentCalendarCounts = myBookings.reduce((counts, booking) => {
@@ -596,6 +644,18 @@ export default function App() {
         cabinCount + (isSlotFree(cabin, selectedDate, time, duration).free ? 1 : 0)
       ), 0)
     ), 0);
+    const availableByCabin = CABINS.reduce((counts, cabin) => {
+      counts[cabin] = times.filter((time) => isSlotFree(cabin, selectedDate, time, duration).free).length;
+      return counts;
+    }, {});
+    const upcomingApproved = myBookings.find((booking) => booking.status === 'approved' && new Date(`${booking.date}T${booking.time}:00`).getTime() > now);
+    const countdownLabel = upcomingApproved ? (() => {
+      const seconds = Math.max(0, Math.floor((new Date(`${upcomingApproved.date}T${upcomingApproved.time}:00`).getTime() - now) / 1000));
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${days ? `${days}d ` : ''}${hours}h ${minutes}m`;
+    })() : '';
     const orderedTimes = [...times].sort((a, b) => {
       const availableA = CABINS.filter((cabin) => isSlotFree(cabin, selectedDate, a, duration).free).length;
       const availableB = CABINS.filter((cabin) => isSlotFree(cabin, selectedDate, b, duration).free).length;
@@ -610,6 +670,7 @@ export default function App() {
           <div>
             <h2 className="serif" style={{ fontSize: '1.4rem' }}>Hi, {student.name}</h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain} · {student.phone}</p>
+            <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
           {loadError && (
             <div className="card retry-banner">
@@ -628,10 +689,24 @@ export default function App() {
         </div>
         {bookingSuccess && (
           <div className="card success-banner" role="status">
-            <span>{bookingSuccess}</span>
-            <button className="link-btn" onClick={() => setBookingSuccess('')} aria-label="Dismiss booking success message">Dismiss</button>
+            {bookingSuccess.message ? <span style={{ whiteSpace: 'pre-wrap' }}>{bookingSuccess.message}</span> : (
+              <div>
+                <strong>Booking request sent — confirmation details</strong>
+                <div style={{ marginTop: 6, fontSize: '0.85rem' }}>{bookingSuccess.company} · {bookingSuccess.round} · {formatDateLabel(bookingSuccess.date)} · {formatTimeLabel(bookingSuccess.time)} · {bookingSuccess.cabin} · {bookingSuccess.duration} min</div>
+                <div style={{ marginTop: 4, fontSize: '0.8rem' }}>Interviewer: {bookingSuccess.interviewer || 'Not assigned'} · Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
+                <div style={{ marginTop: 4, fontSize: '0.8rem' }}>Status: Pending approval</div>
+              </div>
+            )}
+            <button className="link-btn" onClick={() => setBookingSuccess(null)} aria-label="Dismiss booking success message">Dismiss</button>
           </div>
         )}
+
+        <div className="card" style={{ marginBottom: 16 }}>
+          <strong>Upcoming interview</strong>
+          {upcomingApproved ? (
+            <p style={{ margin: '8px 0 0', fontSize: '0.9rem' }}>{upcomingApproved.company} · {formatDateLabel(upcomingApproved.date)} at {formatTimeLabel(upcomingApproved.time)} — starts in <strong>{countdownLabel}</strong></p>
+          ) : <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: '0.85rem' }}>No approved interviews scheduled yet.</p>}
+        </div>
 
         <div className="card" style={{ marginBottom: 24 }}>
           <div className="calendar-heading">
@@ -675,6 +750,9 @@ export default function App() {
                 <div><span>Timezone</span><strong>{booking.timezone || 'local'}</strong></div>
               </div>
             ))}
+            {myBookings.filter((booking) => booking.date === selectedDate).length === 0 && (
+              <p className="empty-state" style={{ margin: '12px 0 0' }}>No interviews scheduled for this date.</p>
+            )}
           </div>
         </div>
 
@@ -701,6 +779,9 @@ export default function App() {
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: 16 }}>
           {formatDateLabel(selectedDate)} · {availableSlotCount} available slot{availableSlotCount === 1 ? '' : 's'} · Showing {duration === 60 ? '1-hour' : '30-minute'} time slots · Interview hours 8:00 AM – 10:00 PM · Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </p>
+        <div className="filter-row">
+          {CABINS.map((cabin) => <span key={cabin} className="filter-chip">{cabin}: {availableByCabin[cabin]} available</span>)}
+        </div>
 
         {myBookings.filter((b) => b.status === 'approved').map((b) => (
           <div
@@ -755,16 +836,22 @@ export default function App() {
         </div>
         {availableSlotCount === 0 && (
           <div className="card empty-state" role="status">
-            No available slots for {formatDateLabel(selectedDate)}. Try another date or choose a different duration.
+            No available slots for {formatDateLabel(selectedDate)}. Try another date or choose a different duration. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> if you need help.
           </div>
         )}
 
-        <h3 className="serif" style={{ fontSize: '1.1rem', marginBottom: 12 }}>Your interview requests</h3>
-        {myBookings.length === 0 ? (
-          <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No requests yet. Book a slot above.</p>
+        <h3 className="serif" style={{ fontSize: '1.1rem', marginBottom: 12 }}>Your interview history</h3>
+        <div className="search-row" style={{ display: 'flex', gap: 8 }}>
+          <input className="search-input" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Search company or round…" aria-label="Search interview history" />
+          <select className="search-input" style={{ width: 150 }} value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)}>
+            <option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        {historyBookings.length === 0 ? (
+          <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No matching interview history. Book a slot above.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {myBookings.map((b) => (
+            {historyBookings.map((b) => (
               <div key={b.id} className="card booking-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '0.9rem' }}>
                   <div style={{ fontWeight: 500 }}>{b.company} · {b.round}</div>
@@ -775,7 +862,10 @@ export default function App() {
                   {b.status === 'cancelled' && b.cancelReason && <div className="cancel-reason">Cancellation reason: {b.cancelReason}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Badge text={statusLabel(b.status)} kind={b.status} />
+                  <button className="btn btn-small btn-outline" onClick={() => copyBookingDetails(b)}>Copy details</button>
+                  </div>
                   {b.status !== 'cancelled' && !isPastSlot(b.date, b.time) && (
                     <>
                       <button className="btn btn-small btn-outline" onClick={() => openReschedule(b)}>Reschedule</button>
@@ -783,6 +873,7 @@ export default function App() {
                     </>
                   )}
                 </div>
+                <div className="status-help">{b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
               </div>
             ))}
           </div>
@@ -908,15 +999,16 @@ export default function App() {
 
   // ---------- ADMIN DASHBOARD ----------
   if (view === 'admin' && adminToken) {
-    const total = bookings.length;
-    const pendingCount = bookings.filter((b) => b.status === 'pending').length;
-    const approvedCount = bookings.filter((b) => b.status === 'approved').length;
-    const rejectedCount = bookings.filter((b) => b.status === 'rejected').length;
-    const cancelledCount = bookings.filter((b) => b.status === 'cancelled').length;
+    const todayBookings = bookings.filter((b) => b.date === todayStr());
+    const total = todayBookings.length;
+    const pendingCount = todayBookings.filter((b) => b.status === 'pending').length;
+    const approvedCount = todayBookings.filter((b) => b.status === 'approved').length;
+    const availableToday = slotsForDuration(30).reduce((count, time) => count + CABINS.filter((cabin) => isSlotFree(cabin, todayStr(), time, 30).free).length, 0);
 
     const filtered = bookings
       .filter((b) => {
         if (adminDateFilter && b.date !== adminDateFilter) return false;
+        if (adminCabinFilter !== 'all' && b.cabin !== adminCabinFilter) return false;
         if (adminFilter === 'today') return b.date === todayStr();
         if (!(adminFilter === 'all' || b.status === adminFilter)) return false;
         if (!adminSearch.trim()) return true;
@@ -939,6 +1031,7 @@ export default function App() {
       { key: 'requests', label: 'Requests' },
       { key: 'students', label: 'Students' },
       { key: 'slots', label: 'Slot availability' },
+      { key: 'activity', label: 'Activity history' },
     ];
 
     const studentList = Object.values(students)
@@ -978,11 +1071,18 @@ export default function App() {
     }, {});
     const calendarDates = calendarDays(adminCalendarMonth);
     const selectedCalendarBookings = adminDateFilter ? bookings.filter((booking) => booking.date === adminDateFilter) : [];
+    const activeCabinCounts = CABINS.reduce((counts, cabin) => {
+      counts[cabin] = bookings.filter((booking) => booking.cabin === cabin && booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date >= todayStr()).length;
+      return counts;
+    }, {});
 
     return (
       <div className="container">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <h2 className="serif" style={{ fontSize: '1.5rem' }}>Admin dashboard</h2>
+          <div>
+            <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Admin dashboard</h2>
+            <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
+          </div>
           <button className="link-btn" onClick={logoutAdmin}>Sign out</button>
         </div>
         {loadError && (
@@ -995,11 +1095,10 @@ export default function App() {
 
         <div className="stat-grid">
           {[
-            ['Total interviews', total, 'var(--ink)'],
-            ['Pending', pendingCount, 'var(--pending)'],
-            ['Approved', approvedCount, 'var(--approved)'],
-            ['Rejected', rejectedCount, 'var(--rejected)'],
-            ['Cancelled', cancelledCount, 'var(--cancelled)'],
+            ["Today's total", total, 'var(--ink)'],
+            ["Today's approved", approvedCount, 'var(--approved)'],
+            ["Today's pending", pendingCount, 'var(--pending)'],
+            ['Available slots', availableToday, 'var(--accent)'],
           ].map(([label, val, color]) => (
             <div key={label} className="stat-box">
               <div className="serif stat-value" style={{ color }}>{val}</div>
@@ -1007,6 +1106,16 @@ export default function App() {
             </div>
           ))}
         </div>
+        <p className="loading-text">Today's availability: {CABINS.map((cabin) => `${cabin} ${slotsForDuration(30).filter((time) => isSlotFree(cabin, todayStr(), time, 30).free).length}`).join(' · ')} free 30-minute slots</p>
+        <div className="filter-row">
+          <button className="filter-chip" onClick={() => { setAdminDateFilter(todayStr()); setAdminFilter('all'); setAdminTab('requests'); }}>Today</button>
+          <button className="filter-chip" onClick={() => { setAdminDateFilter(null); setAdminFilter('pending'); setAdminTab('requests'); }}>Pending</button>
+          <button className="filter-chip" onClick={() => { setAdminDateFilter(null); setAdminFilter('approved'); setAdminTab('requests'); }}>Approved</button>
+          <button className="btn btn-small btn-outline" onClick={() => exportDailySchedule(adminDateFilter || todayStr())}>Export {adminDateFilter || 'today'} CSV</button>
+        </div>
+        {todayBookings.filter((booking) => booking.status !== 'cancelled' && booking.status !== 'rejected').length === 0 && (
+          <div className="card empty-state" style={{ margin: '0 0 20px' }}>No interviews today.</div>
+        )}
 
         <div className="card" style={{ marginBottom: 24 }}>
           <div className="calendar-heading">
@@ -1169,7 +1278,13 @@ export default function App() {
               ))}
             </div>
             <div className="search-row">
-              <input className="search-input" value={adminSearch} onChange={(e) => { setAdminSearch(e.target.value); setAdminRequestPage(1); }} placeholder="Search student, company, phone, round…" aria-label="Search interviews" />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input className="search-input" style={{ flex: 1, minWidth: 220 }} value={adminSearch} onChange={(e) => { setAdminSearch(e.target.value); setAdminRequestPage(1); }} placeholder="Search student, company, phone, round…" aria-label="Search interviews" />
+                <select className="search-input" style={{ width: 150 }} value={adminCabinFilter} onChange={(e) => { setAdminCabinFilter(e.target.value); setAdminRequestPage(1); }}>
+                  <option value="all">All cabins</option>{CABINS.map((cabin) => <option key={cabin} value={cabin}>{cabin}</option>)}
+                </select>
+                <input className="search-input" style={{ width: 160 }} type="date" value={adminDateFilter || ''} onChange={(e) => { setAdminDateFilter(e.target.value || null); setAdminRequestPage(1); }} aria-label="Filter by date" />
+              </div>
             </div>
 
             {filtered.length === 0 ? (
@@ -1206,6 +1321,9 @@ export default function App() {
                             </button>
                            <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => setBookingStatus(b.id, 'cancelled')}>
                              Cancel
+                           </button>
+                           <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteBooking(b)}>
+                             Delete
                            </button>
                           </div>
                         )}
@@ -1294,7 +1412,11 @@ export default function App() {
             <div className="cabin-management">
               {CABINS.map((cabin) => {
                 const enabled = !disabledCabins.includes(cabin);
-                return <div key={cabin} className="card cabin-row"><span><strong>{cabin}</strong><small>{enabled ? 'Enabled for booking' : 'Disabled for all new bookings'}</small></span><button className="btn btn-small btn-outline" onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button></div>;
+                const activeCount = activeCabinCounts[cabin] || 0;
+                return <div key={cabin} className="card cabin-row">
+                  <span><strong>{cabin}</strong><small>{enabled ? 'Enabled for booking' : 'Disabled for all new bookings'}</small>{enabled && activeCount > 0 && <small className="warning-text">Has {activeCount} active interview{activeCount === 1 ? '' : 's'} — reschedule or cancel first.</small>}</span>
+                  <button className="btn btn-small btn-outline" disabled={enabled && activeCount > 0} onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button>
+                </div>;
               })}
             </div>
 
@@ -1335,6 +1457,19 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {adminTab === 'activity' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <h3 className="serif" style={{ fontSize: '1.1rem', margin: 0 }}>Activity history</h3>
+            {activityHistory.length === 0 ? <p style={{ color: 'var(--ink-soft)', fontSize: '0.9rem' }}>No approval, cancellation, or deletion activity yet.</p> : activityHistory.map((activity) => (
+              <div className="card" key={activity.id} style={{ fontSize: '0.85rem' }}>
+                <strong>{activity.action[0].toUpperCase() + activity.action.slice(1)}</strong>
+                <span style={{ color: 'var(--ink-soft)' }}> · {new Date(activity.at).toLocaleString()}</span>
+                <div style={{ marginTop: 4 }}>{activity.studentName || 'Unknown student'}{activity.company ? ` · ${activity.company}` : ''}{activity.date ? ` · ${formatDateLabel(activity.date)} ${formatTimeLabel(activity.time)}` : ''}</div>
+                <div style={{ color: 'var(--ink-soft)', marginTop: 3 }}>{activity.details}</div>
+              </div>
+            ))}
           </div>
         )}
         {rescheduleBooking && adminToken && (

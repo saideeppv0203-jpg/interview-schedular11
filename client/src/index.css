@@ -312,7 +312,7 @@ input {
 }
 .calendar-status.status-approved { background: var(--approved); }
 .calendar-status.status-rejected { background: var(--danger); }
-.calendar-status.status-cancelled { background: var(--danger); }
+.calendar-status.status-cancelled { background: var(--cancelled); }
 .calendar-day.empty {
   border-color: transparent;
   background: transparent;
@@ -486,6 +486,12 @@ input {
   margin-top: 4px;
   color: var(--danger);
   font-size: 0.8rem;
+}
+.status-help {
+  flex-basis: 100%;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  margin-top: 4px;
 }
 .text-area {
   width: 100%;
