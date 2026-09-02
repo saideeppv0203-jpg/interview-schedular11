@@ -620,7 +620,7 @@ export default function App() {
           {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
           <button className="btn btn-small btn-outline" onClick={logoutStudent}>Sign out</button>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <div className="student-actions">
           <button className="btn btn-small btn-outline" onClick={openProfile}>Edit profile</button>
           <button className="btn btn-small btn-outline" onClick={refresh} disabled={stateLoading}>
             {stateLoading ? 'Refreshing…' : 'Refresh schedule'}
@@ -650,7 +650,7 @@ export default function App() {
           <div className="calendar-grid calendar-weekdays">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="calendar-weekday">{day}</div>)}
             {studentCalendarDates.map((date, index) => date ? (
-              <button key={date} className={`calendar-day ${selectedDate === date ? 'selected' : ''} ${date === todayStr() ? 'today' : ''}`} onClick={() => {
+              <button key={date} disabled={date < todayStr()} className={`calendar-day ${selectedDate === date ? 'selected' : ''} ${date === todayStr() ? 'today' : ''} ${date < todayStr() ? 'past' : ''}`} onClick={() => {
                 setSelectedDate(date);
                 setStudentCalendarMonth(new Date(`${date}T00:00:00`));
               }}>
