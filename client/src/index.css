@@ -574,6 +574,51 @@ input {
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+.student-greeting {
+  margin: -2px 0 4px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+.schedule-view-toggle {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-alt);
+}
+.schedule-view-toggle .admin-tab {
+  flex: 0 0 auto;
+}
+.booking-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 12px;
+}
+.booking-section-heading h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.booking-section-heading p {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.history-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.history-groups h4 {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .calendar-interview-details {
   display: flex;
   flex-direction: column;

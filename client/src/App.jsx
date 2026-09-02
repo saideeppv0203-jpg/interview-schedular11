@@ -165,6 +165,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [duration, setDuration] = useState(30);
   const [studentCalendarMonth, setStudentCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [studentScheduleView, setStudentScheduleView] = useState('calendar');
   const [bookingSuccess, setBookingSuccess] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -649,6 +650,8 @@ export default function App() {
       (!historyStatus || historyStatus === 'all' || b.status === historyStatus) &&
       (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
     ));
+    const upcomingBookings = historyBookings.filter((b) => !isPastSlot(b.date, b.time));
+    const pastBookings = historyBookings.filter((b) => isPastSlot(b.date, b.time));
 
     const times = slotsForDuration(duration).filter((time) => !isPastSlot(selectedDate, time));
     const studentCalendarCounts = myBookings.reduce((counts, booking) => {
@@ -687,7 +690,8 @@ export default function App() {
       <div className="container">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <h2 className="serif" style={{ fontSize: '1.4rem' }}>Hi, {student.name}</h2>
+            <h2 className="serif" style={{ fontSize: '1.4rem' }}>My interview schedule</h2>
+            <p className="student-greeting">Hi, {student.name}</p>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain} · {student.phone}</p>
             <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
@@ -727,7 +731,11 @@ export default function App() {
           ) : <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: '0.85rem' }}>No approved interviews scheduled yet.</p>}
         </div>
 
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="schedule-view-toggle" role="tablist" aria-label="Schedule view">
+          <button className={`admin-tab ${studentScheduleView === 'calendar' ? 'active' : ''}`} onClick={() => setStudentScheduleView('calendar')}>Calendar</button>
+          <button className={`admin-tab ${studentScheduleView === 'list' ? 'active' : ''}`} onClick={() => setStudentScheduleView('list')}>List</button>
+        </div>
+        {studentScheduleView === 'calendar' && <div className="card admin-section" style={{ marginBottom: 24 }}>
           <div className="calendar-heading">
             <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Your interview calendar</h3>
             <div className="calendar-navigation">
@@ -773,8 +781,14 @@ export default function App() {
               <p className="empty-state" style={{ margin: '12px 0 0' }}>No interviews scheduled for this date.</p>
             )}
           </div>
-        </div>
+        </div>}
 
+        <div className="booking-section-heading">
+          <div>
+            <h3 className="serif">Book an interview</h3>
+            <p>Choose a date and duration to see available cabins.</p>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
           <div className="field" style={{ maxWidth: 220 }}>
             <label>Pick a date</label>
@@ -869,8 +883,14 @@ export default function App() {
         {historyBookings.length === 0 ? (
           <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No matching interview history. Book a slot above.</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {historyBookings.map((b) => (
+          <div className="history-groups">
+            {[
+              ['Upcoming', upcomingBookings],
+              ['Past interviews', pastBookings],
+            ].map(([groupLabel, groupBookings]) => groupBookings.length > 0 && <section key={groupLabel}>
+              <h4>{groupLabel}</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {groupBookings.map((b) => (
               <div key={b.id} className="card booking-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '0.9rem' }}>
                   <div style={{ fontWeight: 500 }}>{b.company} · {b.round}</div>
@@ -895,6 +915,8 @@ export default function App() {
                 <div className="status-help">{b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
               </div>
             ))}
+              </div>
+            </section>)}
           </div>
         )}
 
