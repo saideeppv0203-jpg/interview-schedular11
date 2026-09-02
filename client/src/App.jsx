@@ -690,8 +690,8 @@ export default function App() {
       <div className="container">
         <div className="student-header">
           <div>
-            <h2 className="serif" style={{ fontSize: '1.4rem' }}>My interview schedule</h2>
-            <p className="student-greeting">Hi, {student.name}</p>
+            <h2 className="serif student-welcome-title">Welcome to <span>Placement Assist</span></h2>
+            <p className="student-greeting">Hello, <strong>{student.name}</strong></p>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain} · {student.phone}</p>
             <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
