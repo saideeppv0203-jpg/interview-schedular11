@@ -583,7 +583,7 @@ export default function App() {
       .filter((b) => b.phone === student.phone)
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
-    const times = slotsForDuration(duration);
+    const times = slotsForDuration(duration).filter((time) => !isPastSlot(selectedDate, time));
     const studentCalendarCounts = myBookings.reduce((counts, booking) => {
       if (!counts[booking.date]) counts[booking.date] = { total: 0, statuses: {} };
       counts[booking.date].total += 1;
@@ -592,10 +592,15 @@ export default function App() {
     }, {});
     const studentCalendarDates = calendarDays(studentCalendarMonth);
     const availableSlotCount = times.reduce((count, time) => (
-      count + (isPastSlot(selectedDate, time) ? 0 : CABINS.reduce((cabinCount, cabin) => (
+      count + CABINS.reduce((cabinCount, cabin) => (
         cabinCount + (isSlotFree(cabin, selectedDate, time, duration).free ? 1 : 0)
-      ), 0))
+      ), 0)
     ), 0);
+    const orderedTimes = [...times].sort((a, b) => {
+      const availableA = CABINS.filter((cabin) => isSlotFree(cabin, selectedDate, a, duration).free).length;
+      const availableB = CABINS.filter((cabin) => isSlotFree(cabin, selectedDate, b, duration).free).length;
+      return availableB - availableA || a.localeCompare(b);
+    });
     const rescheduleTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(rescheduleDate, time));
     const reschedulePast = isPastSlot(rescheduleDate, rescheduleTime);
 
@@ -613,10 +618,13 @@ export default function App() {
             </div>
           )}
           {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
-          <button className="link-btn" onClick={logoutStudent}>Sign out</button>
+          <button className="btn btn-small btn-outline" onClick={logoutStudent}>Sign out</button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
           <button className="btn btn-small btn-outline" onClick={openProfile}>Edit profile</button>
+          <button className="btn btn-small btn-outline" onClick={refresh} disabled={stateLoading}>
+            {stateLoading ? 'Refreshing…' : 'Refresh schedule'}
+          </button>
         </div>
         {bookingSuccess && (
           <div className="card success-banner" role="status">
@@ -642,7 +650,7 @@ export default function App() {
           <div className="calendar-grid calendar-weekdays">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="calendar-weekday">{day}</div>)}
             {studentCalendarDates.map((date, index) => date ? (
-              <button key={date} className={`calendar-day ${selectedDate === date ? 'selected' : ''}`} onClick={() => {
+              <button key={date} className={`calendar-day ${selectedDate === date ? 'selected' : ''} ${date === todayStr() ? 'today' : ''}`} onClick={() => {
                 setSelectedDate(date);
                 setStudentCalendarMonth(new Date(`${date}T00:00:00`));
               }}>
@@ -715,17 +723,14 @@ export default function App() {
               <div key={c} className="table-cell" style={{ fontWeight: 500 }}>{c}</div>
             ))}
           </div>
-          {times.map((time) => {
-            const past = isPastSlot(selectedDate, time);
+          {orderedTimes.map((time) => {
             return (
               <div key={time} className="table-row">
                 <div className="table-cell label">{formatTimeLabel(time)}</div>
                 {CABINS.map((cabin) => {
                   const { free, mine, blocked, disabled } = isSlotFree(cabin, selectedDate, time, duration);
                   let content;
-                  if (past) {
-                    content = <span style={{ fontSize: '0.75rem', color: 'var(--ink-soft)' }}>Past</span>;
-                  } else if (mine && mine.phone === student.phone) {
+                  if (mine && mine.phone === student.phone) {
                     content = (
                       <div style={{ fontSize: '0.75rem', textAlign: 'center' }}>
                         <Badge text={statusLabel(mine.status)} kind={mine.status} />
@@ -738,7 +743,7 @@ export default function App() {
                     content = (
                       <button className="btn btn-small" style={{ background: 'var(--accent-soft)', color: 'var(--accent-dark)' }}
                         onClick={() => openBookingModal(cabin, selectedDate, time)}>
-                        Book
+                        Book now
                       </button>
                     );
                   }
@@ -748,6 +753,11 @@ export default function App() {
             );
           })}
         </div>
+        {availableSlotCount === 0 && (
+          <div className="card empty-state" role="status">
+            No available slots for {formatDateLabel(selectedDate)}. Try another date or choose a different duration.
+          </div>
+        )}
 
         <h3 className="serif" style={{ fontSize: '1.1rem', marginBottom: 12 }}>Your interview requests</h3>
         {myBookings.length === 0 ? (
