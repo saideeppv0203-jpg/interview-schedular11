@@ -1077,6 +1077,7 @@ export default function App() {
       { key: 'students', label: 'Students' },
       { key: 'slots', label: 'Slot availability' },
       { key: 'activity', label: 'Activity history' },
+      { key: 'settings', label: 'Settings' },
     ];
 
     const studentList = Object.values(students)
@@ -1302,15 +1303,35 @@ export default function App() {
           )}
         </div>
 
-        <div className="admin-tabs">
+        <nav className="admin-tabs" aria-label="Admin workspace navigation">
           {tabs.map((t) => (
             <button key={t.key} className={`admin-tab ${adminTab === t.key ? 'active' : ''}`} onClick={() => setAdminTab(t.key)}>
               {t.label}
             </button>
           ))}
-        </div>
+        </nav>
 
         {adminActionError && <p className="error-text" style={{ marginBottom: 16 }}>{adminActionError}</p>}
+
+        {adminTab === 'settings' && (
+          <div className="settings-grid">
+            <section className="card admin-section settings-card">
+              <p className="admin-kicker">ACCOUNT</p>
+              <h3 className="serif">Administrator profile</h3>
+              <p className="settings-description">Your administrator account is securely managed by the deployment environment.</p>
+              <div className="settings-row"><span>Email</span><strong>{adminEmail || 'Configured administrator'}</strong></div>
+              <div className="settings-row"><span>Access</span><strong><Badge text="Administrator" kind="approved" /></strong></div>
+            </section>
+            <section className="card admin-section settings-card">
+              <p className="admin-kicker">SECURITY</p>
+              <h3 className="serif">Session security</h3>
+              <p className="settings-description">Admin sessions expire automatically after 30 minutes of inactivity.</p>
+              <div className="settings-row"><span>Session status</span><strong><Badge text="Active" kind="approved" /></strong></div>
+              <div className="settings-row"><span>Password</span><strong>Managed securely by deployment settings</strong></div>
+              <p className="settings-note">To change the administrator password, update the <code>ADMIN_PASSWORD</code> environment variable and restart the server.</p>
+            </section>
+          </div>
+        )}
 
         {adminTab === 'requests' && (
           <>
