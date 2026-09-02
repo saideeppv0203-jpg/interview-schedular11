@@ -408,40 +408,6 @@ export default function App() {
         rangesOverlap(item.time, item.duration || 30, booking.time, booking.duration || 30));
       if (duplicate && !window.confirm(`Warning: ${booking.studentName} already has ${duplicate.company} at ${formatDateLabel(duplicate.date)} ${formatTimeLabel(duplicate.time)}. Approve this overlapping booking anyway?`)) return;
     }
-
-    async function bulkUpdateBookings(status) {
-      if (!selectedBookingIds.length) return;
-      if (!window.confirm(`${status === 'approved' ? 'Approve' : 'Reject'} ${selectedBookingIds.length} selected requests?`)) return;
-      setLoading(true);
-      setAdminActionError('');
-      try {
-        await apiPost('/bookings/bulk-status', { ids: selectedBookingIds, status }, adminToken);
-        setSelectedBookingIds([]);
-        await refresh();
-      } catch (err) {
-        setAdminActionError(err.message);
-      }
-      setLoading(false);
-    }
-
-    async function toggleInterviewerAvailability(e) {
-      e.preventDefault();
-      if (!availabilityInterviewer.trim()) return;
-      setLoading(true);
-      setAdminActionError('');
-      try {
-        await apiPost('/interviewer-availability/toggle', {
-          interviewer: availabilityInterviewer.trim(),
-          date: availabilityDate,
-          time: availabilityTime,
-          duration: availabilityDuration,
-        }, adminToken);
-        await refresh();
-      } catch (err) {
-        setAdminActionError(err.message);
-      }
-      setLoading(false);
-    }
     if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : status === 'cancelled' ? 'Cancel' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
     try {
@@ -449,6 +415,40 @@ export default function App() {
       await refresh();
     } catch (err) {
       alert(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function bulkUpdateBookings(status) {
+    if (!selectedBookingIds.length) return;
+    if (!window.confirm(`${status === 'approved' ? 'Approve' : 'Reject'} ${selectedBookingIds.length} selected requests?`)) return;
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiPost('/bookings/bulk-status', { ids: selectedBookingIds, status }, adminToken);
+      setSelectedBookingIds([]);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function toggleInterviewerAvailability(e) {
+    e.preventDefault();
+    if (!availabilityInterviewer.trim()) return;
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiPost('/interviewer-availability/toggle', {
+        interviewer: availabilityInterviewer.trim(),
+        date: availabilityDate,
+        time: availabilityTime,
+        duration: availabilityDuration,
+      }, adminToken);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
     }
     setLoading(false);
   }
@@ -613,31 +613,31 @@ export default function App() {
     } catch (err) {
       setAdminActionError(err.message);
     }
+    setLoading(false);
+  }
 
-    async function addCabin(e) {
-      e.preventDefault();
-      if (!newCabin.trim()) return;
-      setLoading(true);
-      setAdminActionError('');
-      try {
-        await apiPost('/cabins', { cabin: newCabin.trim() }, adminToken);
-        setNewCabin('');
-        await refresh();
-      } catch (err) { setAdminActionError(err.message); }
-      setLoading(false);
-    }
+  async function addCabin(e) {
+    e.preventDefault();
+    if (!newCabin.trim()) return;
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiPost('/cabins', { cabin: newCabin.trim() }, adminToken);
+      setNewCabin('');
+      await refresh();
+    } catch (err) { setAdminActionError(err.message); }
+    setLoading(false);
+  }
 
-    async function addStudent(e) {
-      e.preventDefault();
-      setLoading(true);
-      setAdminActionError('');
-      try {
-        await apiPost('/admin/students', newStudent, adminToken);
-        setNewStudent({ name: '', domain: '', phone: '' });
-        await refresh();
-      } catch (err) { setAdminActionError(err.message); }
-      setLoading(false);
-    }
+  async function addStudent(e) {
+    e.preventDefault();
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiPost('/admin/students', newStudent, adminToken);
+      setNewStudent({ name: '', domain: '', phone: '' });
+      await refresh();
+    } catch (err) { setAdminActionError(err.message); }
     setLoading(false);
   }
 
@@ -649,20 +649,20 @@ export default function App() {
     } catch (error) {
       setBookingSuccess({ message: details });
     }
+  }
 
-    function exportDailySchedule(date) {
-      const rows = bookings.filter((booking) => booking.date === date && booking.status !== 'cancelled' && booking.status !== 'rejected');
-      const headers = ['Date', 'Time', 'Cabin', 'Student', 'Phone', 'Company', 'Round', 'Interviewer', 'Duration', 'Status'];
-      const values = rows.map((booking) => [booking.date, booking.time, booking.cabin, booking.studentName, booking.phone, booking.company, booking.round, booking.interviewer || '', booking.duration || 30, booking.status]);
-      const csv = [headers, ...values].map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `interview-schedule-${date}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
-    }
+  function exportDailySchedule(date) {
+    const rows = bookings.filter((booking) => booking.date === date && booking.status !== 'cancelled' && booking.status !== 'rejected');
+    const headers = ['Date', 'Time', 'Cabin', 'Student', 'Phone', 'Company', 'Round', 'Interviewer', 'Duration', 'Status'];
+    const values = rows.map((booking) => [booking.date, booking.time, booking.cabin, booking.studentName, booking.phone, booking.company, booking.round, booking.interviewer || '', booking.duration || 30, booking.status]);
+    const csv = [headers, ...values].map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `interview-schedule-${date}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   // ---------- LANDING ----------
