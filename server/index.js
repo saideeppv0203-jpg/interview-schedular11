@@ -386,7 +386,7 @@ app.post('/api/register', (req, res) => {
 
 // Create a booking request for a slot
 app.post('/api/bookings', (req, res) => {
-  const { cabin, date, time, duration, phone, studentName, domain, company, round, timezone } = req.body || {};
+  const { cabin, date, time, duration, phone, studentName, domain, company, round, interviewer, timezone } = req.body || {};
   if (!cabin || !date || !time || !phone || !company || !round) {
     return res.status(400).json({ error: 'Missing required booking fields.' });
   }
@@ -457,6 +457,7 @@ app.post('/api/bookings', (req, res) => {
     domain: domain || '',
     company,
     round,
+    interviewer: interviewer || '',
     status: 'pending',
     requestedAt: new Date().toISOString(),
     timezone: timezone || 'local',
@@ -482,7 +483,7 @@ app.post('/api/admin/login', (req, res) => {
 
 // Approve / reject a booking (admin only)
 app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
-  const { status, date, time, duration, phone, cabin } = req.body || {};
+  const { status, date, time, duration, phone, cabin, cancelReason } = req.body || {};
   if (date || time || duration || cabin) {
     const dur = Number(duration || bookingDuration(req.params.id));
     const bookingToMove = db.bookings.find((b) => b.id === req.params.id);
@@ -510,6 +511,7 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
     bookingToMove.cabin = targetCabin;
     if (phone) bookingToMove.phone = phone;
     if (status) bookingToMove.status = status;
+    if (status === 'cancelled' && cancelReason) bookingToMove.cancelReason = String(cancelReason).trim();
     persistData();
     return res.json({ booking: bookingToMove });
   }
@@ -519,6 +521,7 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   const booking = db.bookings.find((b) => b.id === req.params.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
   booking.status = status;
+  if (status === 'cancelled' && cancelReason) booking.cancelReason = String(cancelReason).trim();
   persistData();
   res.json({ booking });
 });
@@ -546,11 +549,16 @@ function bookingDuration(id) {
 
 // Students may reschedule or cancel only their own booking.
 app.patch('/api/student/bookings/:id', (req, res) => {
-  const { phone, action, date, time, duration, timezone, cabin } = req.body || {};
+  const { phone, action, date, time, duration, timezone, cabin, cancelReason } = req.body || {};
   const booking = db.bookings.find((b) => b.id === req.params.id);
   if (!booking || !phone || booking.phone !== phone) return res.status(404).json({ error: 'Booking not found.' });
   if (action === 'cancel') {
+    if (!cancelReason || !String(cancelReason).trim()) {
+      return res.status(400).json({ error: 'A cancellation reason is required.' });
+    }
     booking.status = 'cancelled';
+    booking.cancelReason = String(cancelReason).trim();
+    booking.cancelledAt = new Date().toISOString();
     persistData();
     return res.json({ booking });
   }
@@ -574,6 +582,26 @@ app.patch('/api/student/bookings/:id', (req, res) => {
   booking.status = 'pending';
   persistData();
   res.json({ booking });
+});
+
+// Students can update their profile details; the phone number remains their account identifier.
+app.patch('/api/students/:phone/profile', (req, res) => {
+  const student = db.students[req.params.phone];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
+  if (student.active === false) return res.status(403).json({ error: 'Your account has been disabled by the admin.' });
+  const name = String(req.body && req.body.name || '').trim();
+  const domain = String(req.body && req.body.domain || '').trim();
+  if (!name || !domain) return res.status(400).json({ error: 'Name and domain are required.' });
+  student.name = name;
+  student.domain = domain;
+  db.bookings.forEach((booking) => {
+    if (booking.phone === student.phone) {
+      booking.studentName = name;
+      booking.domain = domain;
+    }
+  });
+  persistData();
+  res.json({ student });
 });
 
 // Enable / disable a student account (admin only)

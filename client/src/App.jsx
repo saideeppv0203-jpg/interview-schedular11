@@ -110,8 +110,8 @@ async function apiDelete(path, token) {
 function Badge({ text, kind }) {
   const map = {
     approved: { color: 'var(--approved)', bg: 'var(--approved-soft)' },
-    rejected: { color: 'var(--danger)', bg: 'var(--danger-soft)' },
-    cancelled: { color: 'var(--danger)', bg: 'var(--danger-soft)' },
+    rejected: { color: 'var(--rejected)', bg: 'var(--rejected-soft)' },
+    cancelled: { color: 'var(--cancelled)', bg: 'var(--cancelled-soft)' },
     pending: { color: 'var(--pending)', bg: 'var(--pending-soft)' },
     booked: { color: 'var(--booked)', bg: 'var(--booked-soft)' },
   };
@@ -142,10 +142,19 @@ export default function App() {
   const [student, setStudent] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [duration, setDuration] = useState(30);
+  const [studentCalendarMonth, setStudentCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [bookingSuccess, setBookingSuccess] = useState('');
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileDomain, setProfileDomain] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [cancelBooking, setCancelBooking] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   const [modalSlot, setModalSlot] = useState(null);
   const [company, setCompany] = useState('');
   const [round, setRound] = useState('');
+  const [interviewer, setInterviewer] = useState('');
   const [modalError, setModalError] = useState('');
 
   const [adminEmail, setAdminEmail] = useState('');
@@ -273,7 +282,7 @@ export default function App() {
   }
 
   function openBookingModal(cabin, date, time) {
-    setModalError(''); setCompany(''); setRound('');
+    setModalError(''); setCompany(''); setRound(''); setInterviewer('');
     setModalSlot({ cabin, date, time, duration });
   }
 
@@ -302,10 +311,12 @@ export default function App() {
         domain: student.domain,
         company: company.trim(),
         round: round.trim(),
+        interviewer: interviewer.trim(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       await refresh();
       setModalSlot(null);
+      setBookingSuccess(`Booking request sent for ${company.trim()} on ${formatDateLabel(modalSlot.date)} at ${formatTimeLabel(modalSlot.time)}.`);
     } catch (err) {
       setModalError(err.message);
     }
@@ -338,7 +349,7 @@ export default function App() {
   }
 
   async function setBookingStatus(id, status) {
-    if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : 'Set pending'} this interview request?`)) return;
+    if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : status === 'cancelled' ? 'Cancel' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
     try {
       await apiPatch(`/bookings/${id}`, { status }, adminToken);
@@ -408,9 +419,20 @@ export default function App() {
     setAdminActionError('');
   }
 
+  function changeRescheduleDuration(value) {
+    setRescheduleDuration(value);
+    const nextTimes = slotsForDuration(value).filter((time) => !isPastSlot(rescheduleDate, time));
+    if (nextTimes.length && !nextTimes.includes(rescheduleTime)) setRescheduleTime(nextTimes[0]);
+  }
+
   async function saveReschedule(e) {
     e.preventDefault();
     if (!rescheduleBooking) return;
+    if (isPastSlot(rescheduleDate, rescheduleTime)) {
+      setModalError('Choose a future date and time.');
+      return;
+    }
+    if (!window.confirm(`Reschedule this interview to ${formatDateLabel(rescheduleDate)} at ${formatTimeLabel(rescheduleTime)}?`)) return;
     setAdminActionError('');
     setLoading(true);
     try {
@@ -429,14 +451,60 @@ export default function App() {
   }
 
   async function cancelStudentBooking(booking) {
-    if (!window.confirm('Cancel this interview request?')) return;
+    setCancelBooking(booking);
+    setCancelReason('');
     setModalError('');
+  }
+
+  async function submitCancellation(e) {
+    e.preventDefault();
+    if (!cancelBooking) return;
+    if (!cancelReason.trim()) {
+      setModalError('Please provide a reason for cancelling.');
+      return;
+    }
     setLoading(true);
+    setModalError('');
     try {
-      await apiPatch(`/student/bookings/${encodeURIComponent(booking.id)}`, { phone: student.phone, action: 'cancel' });
+      await apiPatch(`/student/bookings/${encodeURIComponent(cancelBooking.id)}`, {
+        phone: student.phone,
+        action: 'cancel',
+        cancelReason: cancelReason.trim(),
+      });
       await refresh();
+      setCancelBooking(null);
+      setCancelReason('');
     } catch (err) {
       setModalError(err.message);
+    }
+    setLoading(false);
+  }
+
+  function openProfile() {
+    setProfileName(student.name || '');
+    setProfileDomain(student.domain || '');
+    setProfileError('');
+    setProfileOpen(true);
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    if (!profileName.trim() || !profileDomain.trim()) {
+      setProfileError('Name and domain are required.');
+      return;
+    }
+    setLoading(true);
+    setProfileError('');
+    try {
+      const { student: updated } = await apiPatch(`/students/${encodeURIComponent(student.phone)}/profile`, {
+        name: profileName.trim(),
+        domain: profileDomain.trim(),
+      });
+      setStudent(updated);
+      await refresh();
+      setProfileOpen(false);
+    } catch (err) {
+      setProfileError(err.message);
     }
     setLoading(false);
   }
@@ -516,13 +584,27 @@ export default function App() {
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
     const times = slotsForDuration(duration);
+    const studentCalendarCounts = myBookings.reduce((counts, booking) => {
+      if (!counts[booking.date]) counts[booking.date] = { total: 0, statuses: {} };
+      counts[booking.date].total += 1;
+      counts[booking.date].statuses[booking.status] = (counts[booking.date].statuses[booking.status] || 0) + 1;
+      return counts;
+    }, {});
+    const studentCalendarDates = calendarDays(studentCalendarMonth);
+    const availableSlotCount = times.reduce((count, time) => (
+      count + (isPastSlot(selectedDate, time) ? 0 : CABINS.reduce((cabinCount, cabin) => (
+        cabinCount + (isSlotFree(cabin, selectedDate, time, duration).free ? 1 : 0)
+      ), 0))
+    ), 0);
+    const rescheduleTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(rescheduleDate, time));
+    const reschedulePast = isPastSlot(rescheduleDate, rescheduleTime);
 
     return (
       <div className="container">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
             <h2 className="serif" style={{ fontSize: '1.4rem' }}>Hi, {student.name}</h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain}</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain} · {student.phone}</p>
           </div>
           {loadError && (
             <div className="card retry-banner">
@@ -532,6 +614,60 @@ export default function App() {
           )}
           {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
           <button className="link-btn" onClick={logoutStudent}>Sign out</button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button className="btn btn-small btn-outline" onClick={openProfile}>Edit profile</button>
+        </div>
+        {bookingSuccess && (
+          <div className="card success-banner" role="status">
+            <span>{bookingSuccess}</span>
+            <button className="link-btn" onClick={() => setBookingSuccess('')} aria-label="Dismiss booking success message">Dismiss</button>
+          </div>
+        )}
+
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="calendar-heading">
+            <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Your interview calendar</h3>
+            <div className="calendar-navigation">
+              <button className="btn btn-small btn-outline" onClick={() => {
+                const today = new Date();
+                setStudentCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                setSelectedDate(todayStr());
+              }}>Today</button>
+              <button className="btn btn-small btn-outline" onClick={() => setStudentCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Previous month">←</button>
+              <strong>{studentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong>
+              <button className="btn btn-small btn-outline" onClick={() => setStudentCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Next month">→</button>
+            </div>
+          </div>
+          <div className="calendar-grid calendar-weekdays">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="calendar-weekday">{day}</div>)}
+            {studentCalendarDates.map((date, index) => date ? (
+              <button key={date} className={`calendar-day ${selectedDate === date ? 'selected' : ''}`} onClick={() => {
+                setSelectedDate(date);
+                setStudentCalendarMonth(new Date(`${date}T00:00:00`));
+              }}>
+                <span>{Number(date.slice(-2))}</span>
+                {studentCalendarCounts[date] ? (
+                  <span className="calendar-statuses" aria-label={`${studentCalendarCounts[date].total} interviews`}>
+                    {Object.entries(studentCalendarCounts[date].statuses).map(([status, count]) => <i key={status} className={`calendar-status status-${status}`} title={`${count} ${status}`} />)}
+                  </span>
+                ) : <span />}
+              </button>
+            ) : <div key={`student-empty-${index}`} className="calendar-day empty" />)}
+          </div>
+          <div className="calendar-selection">
+            <strong>{formatDateLabel(selectedDate)}</strong>
+            <span>{(studentCalendarCounts[selectedDate] || { total: 0 }).total} interview{(studentCalendarCounts[selectedDate] || { total: 0 }).total === 1 ? '' : 's'} scheduled</span>
+            {myBookings.filter((booking) => booking.date === selectedDate).map((booking) => (
+              <div className="calendar-interview-details" key={`calendar-${booking.id}`}>
+                <div><strong>{formatTimeLabel(booking.time)} · {booking.company}</strong><span>{statusLabel(booking.status)}</span></div>
+                <div><span>Round</span><strong>{booking.round}</strong></div>
+                <div><span>Cabin · Duration</span><strong>{booking.cabin} · {booking.duration || 30} min</strong></div>
+                <div><span>Interviewer</span><strong>{booking.interviewer || 'Not assigned'}</strong></div>
+                <div><span>Timezone</span><strong>{booking.timezone || 'local'}</strong></div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -555,7 +691,7 @@ export default function App() {
           </div>
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: 16 }}>
-          {formatDateLabel(selectedDate)} · Showing {duration === 60 ? '1-hour' : '30-minute'} time slots · Interview hours 8:00 AM – 10:00 PM · {Intl.DateTimeFormat().resolvedOptions().timeZone}
+          {formatDateLabel(selectedDate)} · {availableSlotCount} available slot{availableSlotCount === 1 ? '' : 's'} · Showing {duration === 60 ? '1-hour' : '30-minute'} time slots · Interview hours 8:00 AM – 10:00 PM · Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </p>
 
         {myBookings.filter((b) => b.status === 'approved').map((b) => (
@@ -572,7 +708,7 @@ export default function App() {
           </div>
         ))}
 
-        <div className="table" style={{ marginBottom: 32 }}>
+        <div className="table slot-table" style={{ marginBottom: 32 }}>
           <div className="table-header">
             <div className="table-cell label" style={{ fontWeight: 500 }}>Time</div>
             {CABINS.map((c) => (
@@ -592,8 +728,8 @@ export default function App() {
                   } else if (mine && mine.phone === student.phone) {
                     content = (
                       <div style={{ fontSize: '0.75rem', textAlign: 'center' }}>
-                        <Badge text={mine.status === 'approved' ? 'Approved' : mine.status === 'rejected' ? 'Rejected' : 'Pending'} kind={mine.status} />
-                        <div style={{ marginTop: 4, color: 'var(--ink-soft)' }}>{mine.company}</div>
+                        <Badge text={statusLabel(mine.status)} kind={mine.status} />
+                        <div style={{ marginTop: 4, color: 'var(--ink-soft)' }}>{mine.company} · {mine.round}</div>
                       </div>
                     );
                   } else if (!free) {
@@ -619,12 +755,14 @@ export default function App() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {myBookings.map((b) => (
-              <div key={b.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={b.id} className="card booking-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '0.9rem' }}>
                   <div style={{ fontWeight: 500 }}>{b.company} · {b.round}</div>
                   <div style={{ color: 'var(--ink-soft)' }}>
-                    {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min
+                {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min · {b.timezone || 'local'}
                   </div>
+                  <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>Interviewer: {b.interviewer || 'Not assigned'}</div>
+                  {b.status === 'cancelled' && b.cancelReason && <div className="cancel-reason">Cancellation reason: {b.cancelReason}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Badge text={statusLabel(b.status)} kind={b.status} />
@@ -646,11 +784,46 @@ export default function App() {
               <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 12 }}>Reschedule interview</h3>
               <form onSubmit={saveReschedule}>
                 <div className="field"><label>Cabin</label><select value={rescheduleCabin} onChange={(e) => setRescheduleCabin(e.target.value)}>{CABINS.map((cabin) => <option key={cabin} value={cabin} disabled={disabledCabins.includes(cabin)}>{cabin}{disabledCabins.includes(cabin) ? ' (disabled)' : ''}</option>)}</select></div>
-                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} /></div>
-                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{slotsForDuration(rescheduleDuration).map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
-                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => setRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => {
+                  const nextDate = e.target.value;
+                  setRescheduleDate(nextDate);
+                  const nextTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(nextDate, time));
+                  if (nextTimes.length && !nextTimes.includes(rescheduleTime)) setRescheduleTime(nextTimes[0]);
+                }} /></div>
+                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{rescheduleTimes.map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
+                {reschedulePast && <p className="warning-text">That time has already passed. Choose a future time.</p>}
+                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => changeRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
                 {modalError && <p className="error-text">{modalError}</p>}
-                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading || reschedulePast}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {profileOpen && (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 12 }}>Edit profile</h3>
+              <form onSubmit={saveProfile}>
+                <div className="field"><label>Full name</label><input value={profileName} onChange={(e) => setProfileName(e.target.value)} /></div>
+                <div className="field"><label>Domain</label><input value={profileDomain} onChange={(e) => setProfileDomain(e.target.value)} /></div>
+                <div className="field"><label>Phone number</label><input value={student.phone} disabled /></div>
+                {profileError && <p className="error-text">{profileError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>{loading ? 'Saving…' : 'Save profile'}</button><button type="button" className="btn btn-outline" onClick={() => setProfileOpen(false)}>Close</button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {cancelBooking && (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 8 }}>Cancel interview</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{cancelBooking.company} · {formatDateLabel(cancelBooking.date)} · {formatTimeLabel(cancelBooking.time)}</p>
+              <form onSubmit={submitCancellation}>
+                <div className="field"><label>Reason for cancellation</label><textarea className="text-area" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows="3" placeholder="Tell the admin why you need to cancel" /></div>
+                {modalError && <p className="error-text">{modalError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>{loading ? 'Cancelling…' : 'Confirm cancellation'}</button><button type="button" className="btn btn-outline" onClick={() => setCancelBooking(null)}>Keep interview</button></div>
               </form>
             </div>
           </div>
@@ -675,6 +848,10 @@ export default function App() {
                 <div className="field">
                   <label>Interview round</label>
                   <input value={round} onChange={(e) => setRound(e.target.value)} placeholder="e.g. Technical round 1" />
+                </div>
+                <div className="field">
+                  <label>Interviewer (optional)</label>
+                  <input value={interviewer} onChange={(e) => setInterviewer(e.target.value)} placeholder="e.g. Priya Sharma" />
                 </div>
                 {modalError && <p className="error-text" style={{ marginBottom: 12 }}>{modalError}</p>}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -725,6 +902,7 @@ export default function App() {
     const pendingCount = bookings.filter((b) => b.status === 'pending').length;
     const approvedCount = bookings.filter((b) => b.status === 'approved').length;
     const rejectedCount = bookings.filter((b) => b.status === 'rejected').length;
+    const cancelledCount = bookings.filter((b) => b.status === 'cancelled').length;
 
     const filtered = bookings
       .filter((b) => {
@@ -733,7 +911,7 @@ export default function App() {
         if (!(adminFilter === 'all' || b.status === adminFilter)) return false;
         if (!adminSearch.trim()) return true;
         const query = adminSearch.trim().toLowerCase();
-        return [b.studentName, b.phone, b.company, b.round, b.domain, b.cabin].some((value) => String(value || '').toLowerCase().includes(query));
+        return [b.studentName, b.phone, b.company, b.round, b.domain, b.cabin, b.interviewer, b.cancelReason].some((value) => String(value || '').toLowerCase().includes(query));
       })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     const pagedBookings = filtered.slice((adminRequestPage - 1) * PAGE_SIZE, adminRequestPage * PAGE_SIZE);
@@ -744,6 +922,7 @@ export default function App() {
       { key: 'pending', label: 'Pending' },
       { key: 'approved', label: 'Approved' },
       { key: 'rejected', label: 'Rejected' },
+      { key: 'cancelled', label: 'Cancelled' },
     ];
 
     const tabs = [
@@ -757,6 +936,8 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
     const pagedStudents = studentList.slice((adminStudentPage - 1) * PAGE_SIZE, adminStudentPage * PAGE_SIZE);
     const adminTimes = slotsForDuration(adminSlotDuration);
+    const adminRescheduleTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(rescheduleDate, time));
+    const adminReschedulePast = isPastSlot(rescheduleDate, rescheduleTime);
     const dailyInterviewCounts = dateOptions.map((date) => {
       const dayBookings = bookings.filter((booking) => booking.date === date);
       return {
@@ -765,6 +946,7 @@ export default function App() {
         pending: dayBookings.filter((booking) => booking.status === 'pending').length,
         approved: dayBookings.filter((booking) => booking.status === 'approved').length,
         rejected: dayBookings.filter((booking) => booking.status === 'rejected').length,
+        cancelled: dayBookings.filter((booking) => booking.status === 'cancelled').length,
       };
     });
     const selectedDateStudentCounts = adminDateFilter
@@ -806,7 +988,8 @@ export default function App() {
             ['Total interviews', total, 'var(--ink)'],
             ['Pending', pendingCount, 'var(--pending)'],
             ['Approved', approvedCount, 'var(--approved)'],
-            ['Rejected', rejectedCount, 'var(--danger)'],
+            ['Rejected', rejectedCount, 'var(--rejected)'],
+            ['Cancelled', cancelledCount, 'var(--cancelled)'],
           ].map(([label, val, color]) => (
             <div key={label} className="stat-box">
               <div className="serif stat-value" style={{ color }}>{val}</div>
@@ -887,7 +1070,7 @@ export default function App() {
               </div>
               <div className="calendar-interview-details">
                 {selectedCalendarBookings.length === 0 ? <span>No interview details for this date.</span> : selectedCalendarBookings.map((booking) => (
-                  <div key={booking.id}><strong>{formatTimeLabel(booking.time)} · {booking.company}</strong><span>{booking.studentName} · {booking.cabin} · {statusLabel(booking.status)}</span></div>
+                  <div key={booking.id}><strong>{formatTimeLabel(booking.time)} · {booking.company}</strong><span>{booking.studentName} · {booking.round} · {booking.cabin} · {booking.duration || 30} min · {booking.interviewer || 'Interviewer unassigned'} · {statusLabel(booking.status)}</span></div>
                 ))}
               </div>
             </div>
@@ -914,7 +1097,7 @@ export default function App() {
                 <div>
                   <div style={{ fontWeight: 500 }}>{formatDateLabel(day.date)}</div>
                   <div style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>
-                    {day.approved} approved · {day.pending} pending · {day.rejected} rejected
+                    {day.approved} approved · {day.pending} pending · {day.rejected} rejected · {day.cancelled} cancelled
                   </div>
                 </div>
                 <div className="daily-count-total">
@@ -993,8 +1176,10 @@ export default function App() {
                         <div style={{ color: 'var(--ink-soft)' }}>{b.phone}</div>
                         <div style={{ marginTop: 4 }}>{b.company} · {b.round}</div>
                         <div style={{ color: 'var(--ink-soft)' }}>
-                          {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min
+                          {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min · {b.timezone || 'local'}
                         </div>
+                        <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>Interviewer: {b.interviewer || 'Not assigned'}</div>
+                        {b.status === 'cancelled' && b.cancelReason && <div className="cancel-reason">Cancellation reason: {b.cancelReason}</div>}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                         <Badge text={statusLabel(b.status)} kind={b.status} />
@@ -1103,7 +1288,7 @@ export default function App() {
               })}
             </div>
 
-            <div className="table">
+            <div className="table slot-table">
               <div className="table-header">
                 <div className="table-cell label" style={{ fontWeight: 500 }}>Time</div>
                 {CABINS.map((c) => (
@@ -1148,11 +1333,17 @@ export default function App() {
               <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 12 }}>Reschedule interview</h3>
               <form onSubmit={saveReschedule}>
                 <div className="field"><label>Cabin</label><select value={rescheduleCabin} onChange={(e) => setRescheduleCabin(e.target.value)}>{CABINS.map((cabin) => <option key={cabin} value={cabin} disabled={disabledCabins.includes(cabin)}>{cabin}{disabledCabins.includes(cabin) ? ' (disabled)' : ''}</option>)}</select></div>
-                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} /></div>
-                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{slotsForDuration(rescheduleDuration).map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
-                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => setRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => {
+                  const nextDate = e.target.value;
+                  setRescheduleDate(nextDate);
+                  const nextTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(nextDate, time));
+                  if (nextTimes.length && !nextTimes.includes(rescheduleTime)) setRescheduleTime(nextTimes[0]);
+                }} /></div>
+                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{adminRescheduleTimes.map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
+                {adminReschedulePast && <p className="warning-text">That time has already passed. Choose a future time.</p>}
+                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => changeRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
                 {adminActionError && <p className="error-text">{adminActionError}</p>}
-                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading || adminReschedulePast}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
               </form>
             </div>
           </div>

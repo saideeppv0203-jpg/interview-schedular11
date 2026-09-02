@@ -11,6 +11,10 @@
   --pending-soft: #f3e7d3;
   --approved: #3f7d5c;
   --approved-soft: #deebe3;
+  --rejected: #9a3d52;
+  --rejected-soft: #f4dce2;
+  --cancelled: #667085;
+  --cancelled-soft: #e5e7eb;
   --booked: #8b8578;
   --booked-soft: #e7e4da;
   --border: #dcd8ce;
@@ -299,7 +303,7 @@ input {
   background: var(--pending);
 }
 .calendar-status.status-approved { background: var(--approved); }
-.calendar-status.status-rejected,
+.calendar-status.status-rejected { background: var(--danger); }
 .calendar-status.status-cancelled { background: var(--danger); }
 .calendar-day.empty {
   border-color: transparent;
@@ -437,3 +441,46 @@ input {
   font-size: 0.85rem;
 }
 .cabin-row small { color: var(--ink-soft); font-size: 0.72rem; }
+
+.success-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: var(--approved);
+  background: var(--approved-soft);
+  border-color: var(--approved);
+  font-size: 0.9rem;
+}
+.cancel-reason {
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.text-area {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font: inherit;
+  resize: vertical;
+}
+
+/* Keep the slot grid usable on narrow screens without shrinking tap targets. */
+.slot-table {
+  overflow-x: auto;
+}
+.slot-table .table-header,
+.slot-table .table-row {
+  min-width: 520px;
+}
+@media (max-width: 560px) {
+  .container { padding: 20px 12px; }
+  .calendar-heading { align-items: flex-start; flex-direction: column; }
+  .calendar-navigation { width: 100%; justify-content: space-between; }
+  .calendar-day { min-height: 46px; padding: 5px 3px; }
+  .booking-card { align-items: flex-start !important; flex-direction: column; }
+  .booking-card > div:last-child { width: 100%; justify-content: flex-start !important; }
+  .modal { padding: 18px; }
+}
