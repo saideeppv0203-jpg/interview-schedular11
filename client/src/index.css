@@ -42,6 +42,66 @@ body {
   margin: 0 auto;
   padding: 32px 20px;
 }
+.admin-container {
+  max-width: 1120px;
+}
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-header h2 {
+  margin: 0 0 4px;
+}
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-alt);
+}
+.admin-tab {
+  flex: 1 0 auto;
+  padding: 9px 14px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.admin-tab.active {
+  background: var(--panel);
+  color: var(--accent-dark);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(30, 36, 48, 0.12);
+}
+.admin-filters {
+  margin-bottom: 18px;
+  padding: 12px 14px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.admin-filters summary {
+  margin-bottom: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-filter-fields {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 160px 160px;
+  gap: 8px;
+}
 
 button {
   font-family: inherit;
@@ -548,6 +608,9 @@ input {
 }
 @media (max-width: 560px) {
   .container { padding: 20px 12px; }
+  .admin-header { align-items: flex-start; }
+  .admin-filter-fields { grid-template-columns: 1fr; }
+  .admin-filter-fields .search-input { width: 100% !important; }
   .student-actions { justify-content: stretch; }
   .student-actions .btn { flex: 1 1 140px; }
   .calendar-heading { align-items: flex-start; flex-direction: column; }

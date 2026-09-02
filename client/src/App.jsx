@@ -1098,8 +1098,8 @@ export default function App() {
     }, {});
 
     return (
-      <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div className="container admin-container">
+        <div className="admin-header">
           <div>
             <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Admin dashboard</h2>
             <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
@@ -1272,9 +1272,9 @@ export default function App() {
           )}
         </div>
 
-        <div className="filter-row">
+        <div className="admin-tabs">
           {tabs.map((t) => (
-            <button key={t.key} className={`filter-chip ${adminTab === t.key ? 'active' : ''}`} onClick={() => setAdminTab(t.key)}>
+            <button key={t.key} className={`admin-tab ${adminTab === t.key ? 'active' : ''}`} onClick={() => setAdminTab(t.key)}>
               {t.label}
             </button>
           ))}
@@ -1284,37 +1284,40 @@ export default function App() {
 
         {adminTab === 'requests' && (
           <>
-            <div className="filter-row">
-              {filters.map((f) => (
-                <button
-                  key={f.key}
-                  className={`filter-chip ${adminFilter === f.key ? 'active' : ''}`}
-                  onClick={() => {
-                    setAdminFilter(f.key);
-                    setAdminRequestPage(1);
-                    if (f.key === 'all' || f.key === 'today') setAdminDateFilter(null);
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="search-row">
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input className="search-input" style={{ flex: 1, minWidth: 220 }} value={adminSearch} onChange={(e) => { setAdminSearch(e.target.value); setAdminRequestPage(1); }} placeholder="Search student, company, phone, round…" aria-label="Search interviews" />
-                <select className="search-input" style={{ width: 150 }} value={adminCabinFilter} onChange={(e) => { setAdminCabinFilter(e.target.value); setAdminRequestPage(1); }}>
-                  <option value="all">All cabins</option>{CABINS.map((cabin) => <option key={cabin} value={cabin}>{cabin}</option>)}
-                </select>
-                <input className="search-input" style={{ width: 160 }} type="date" value={adminDateFilter || ''} onChange={(e) => { setAdminDateFilter(e.target.value || null); setAdminRequestPage(1); }} aria-label="Filter by date" />
+            <details className="admin-filters" open>
+              <summary>Search and filter requests</summary>
+              <div className="filter-row">
+                {filters.map((f) => (
+                  <button
+                    key={f.key}
+                    className={`filter-chip ${adminFilter === f.key ? 'active' : ''}`}
+                    onClick={() => {
+                      setAdminFilter(f.key);
+                      setAdminRequestPage(1);
+                      if (f.key === 'all' || f.key === 'today') setAdminDateFilter(null);
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
-            </div>
+              <div className="search-row">
+                <div className="admin-filter-fields">
+                  <input className="search-input" value={adminSearch} onChange={(e) => { setAdminSearch(e.target.value); setAdminRequestPage(1); }} placeholder="Search student, company, phone, round…" aria-label="Search interviews" />
+                  <select className="search-input" value={adminCabinFilter} onChange={(e) => { setAdminCabinFilter(e.target.value); setAdminRequestPage(1); }}>
+                    <option value="all">All cabins</option>{CABINS.map((cabin) => <option key={cabin} value={cabin}>{cabin}</option>)}
+                  </select>
+                  <input className="search-input" type="date" value={adminDateFilter || ''} onChange={(e) => { setAdminDateFilter(e.target.value || null); setAdminRequestPage(1); }} aria-label="Filter by date" />
+                </div>
+              </div>
+            </details>
 
             {filtered.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No requests in this view.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {pagedBookings.map((b) => (
-                  <div key={b.id} className="card">
+                  <div key={b.id} className="card booking-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '0.9rem' }}>
                         <div style={{ fontWeight: 500 }}>
