@@ -688,7 +688,7 @@ export default function App() {
 
     return (
       <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div className="student-header">
           <div>
             <h2 className="serif" style={{ fontSize: '1.4rem' }}>My interview schedule</h2>
             <p className="student-greeting">Hi, {student.name}</p>
@@ -724,7 +724,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card student-upcoming" style={{ marginBottom: 16 }}>
           <strong>Upcoming interview</strong>
           {upcomingApproved ? (
             <p style={{ margin: '8px 0 0', fontSize: '0.9rem' }}>{upcomingApproved.company} · {formatDateLabel(upcomingApproved.date)} at {formatTimeLabel(upcomingApproved.time)} — starts in <strong>{countdownLabel}</strong></p>
@@ -789,6 +789,7 @@ export default function App() {
             <p>Choose a date and duration to see available cabins.</p>
           </div>
         </div>
+        <div className="student-booking-panel">
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
           <div className="field" style={{ maxWidth: 220 }}>
             <label>Pick a date</label>
@@ -872,6 +873,7 @@ export default function App() {
             No available slots for {formatDateLabel(selectedDate)}. Try another date or choose a different duration. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> if you need help.
           </div>
         )}
+        </div>
 
         <h3 className="serif" style={{ fontSize: '1.1rem', marginBottom: 12 }}>Your interview history</h3>
         <div className="search-row" style={{ display: 'flex', gap: 8 }}>
@@ -1166,7 +1168,7 @@ export default function App() {
           <div className="card empty-state" style={{ margin: '0 0 20px' }}>No interviews today.</div>
         )}
 
-        <div className="card admin-section" style={{ marginBottom: 24 }}>
+        <div className="card admin-section student-calendar" style={{ marginBottom: 24 }}>
           <div className="calendar-heading">
             <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Interview calendar</h3>
             <div className="calendar-navigation">

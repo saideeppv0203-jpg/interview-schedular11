@@ -579,6 +579,45 @@ input {
   color: var(--ink-soft);
   font-size: 0.85rem;
 }
+.student-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px 22px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(32, 67, 69, 0.18);
+}
+.student-header .student-greeting,
+.student-header .loading-text,
+.student-header p {
+  color: rgba(255, 255, 255, 0.76) !important;
+}
+.student-header .link-btn {
+  color: #fff;
+}
+.student-header h2 {
+  margin: 0 0 4px;
+}
+.student-upcoming {
+  border: none;
+  background: linear-gradient(135deg, var(--approved-soft), #fff);
+  box-shadow: 0 6px 18px rgba(63, 125, 92, 0.1);
+}
+.student-calendar {
+  background: var(--panel);
+}
+.student-booking-panel {
+  margin-bottom: 28px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 5px 18px rgba(30, 36, 48, 0.05);
+}
 .schedule-view-toggle {
   display: flex;
   gap: 4px;
