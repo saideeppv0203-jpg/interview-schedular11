@@ -594,6 +594,16 @@ export default function App() {
 
     const studentList = Object.values(students).sort((a, b) => a.name.localeCompare(b.name));
     const adminTimes = slotsForDuration(adminSlotDuration);
+    const dailyInterviewCounts = dateOptions.map((date) => {
+      const dayBookings = bookings.filter((booking) => booking.date === date);
+      return {
+        date,
+        total: dayBookings.length,
+        pending: dayBookings.filter((booking) => booking.status === 'pending').length,
+        approved: dayBookings.filter((booking) => booking.status === 'approved').length,
+        rejected: dayBookings.filter((booking) => booking.status === 'rejected').length,
+      };
+    });
 
     return (
       <div className="container">
@@ -614,6 +624,29 @@ export default function App() {
               <div className="stat-label">{label}</div>
             </div>
           ))}
+        </div>
+
+        <div className="card" style={{ marginBottom: 24 }}>
+          <h3 className="serif" style={{ fontSize: '1.15rem', margin: '0 0 4px' }}>Interviews by day</h3>
+          <p style={{ color: 'var(--ink-soft)', fontSize: '0.85rem', margin: '0 0 12px' }}>
+            Upcoming interview requests for the next {DAYS_AHEAD} days
+          </p>
+          <div className="daily-count-list">
+            {dailyInterviewCounts.map((day) => (
+              <div key={day.date} className="daily-count-row">
+                <div>
+                  <div style={{ fontWeight: 500 }}>{formatDateLabel(day.date)}</div>
+                  <div style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>
+                    {day.approved} approved · {day.pending} pending · {day.rejected} rejected
+                  </div>
+                </div>
+                <div className="daily-count-total">
+                  <span className="serif">{day.total}</span>
+                  <span>interview{day.total === 1 ? '' : 's'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="filter-row">
