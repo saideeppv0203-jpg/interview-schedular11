@@ -9,6 +9,7 @@ const DURATIONS = [
 ];
 const DAYS_AHEAD = 14;
 const ADMIN_CONTACT = 'vishnavqa@gmail.com';
+const APP_VERSION = '1.0.0';
 
 function pad2(n) { return n.toString().padStart(2, '0'); }
 function minutesToHHMM(mins) {
@@ -121,6 +122,23 @@ function Badge({ text, kind }) {
     <span className="badge" style={{ color: s.color, background: s.bg }}>
       {text}
     </span>
+  );
+}
+
+function AppFooter() {
+  return (
+    <footer className="app-footer">
+      <span>Interview Scheduler v{APP_VERSION}</span>
+      <a href={`mailto:${ADMIN_CONTACT}`}>Support: {ADMIN_CONTACT}</a>
+      <details>
+        <summary>Help / FAQ</summary>
+        <div className="faq-list">
+          <p><strong>How do I book?</strong> Choose a date, duration, cabin, and available slot.</p>
+          <p><strong>When is a booking confirmed?</strong> After an admin approves the request.</p>
+          <p><strong>Can I change my booking?</strong> Use Reschedule or Cancel in your portal.</p>
+        </div>
+      </details>
+    </footer>
   );
 }
 
@@ -617,6 +635,7 @@ export default function App() {
             {loading ? 'Please wait…' : 'Continue'}
           </button>
         </form>
+        <AppFooter />
       </div>
     );
   }
@@ -967,6 +986,7 @@ export default function App() {
             </div>
           </div>
         )}
+        <AppFooter />
       </div>
     );
   }
@@ -993,6 +1013,7 @@ export default function App() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        <AppFooter />
       </div>
     );
   }
@@ -1194,6 +1215,7 @@ export default function App() {
               </div>
             </div>
           )}
+          <AppFooter />
         </div>
 
         <div className="card" style={{ marginBottom: 24 }}>
@@ -1493,6 +1515,7 @@ export default function App() {
             </div>
           </div>
         )}
+        <AppFooter />
       </div>
     );
   }

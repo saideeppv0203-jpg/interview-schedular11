@@ -412,6 +412,42 @@ input {
   font-size: 0.8rem;
   margin: 0 0 12px;
 }
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin-top: 40px;
+  padding: 18px 0 8px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.app-footer a {
+  color: var(--accent);
+}
+.app-footer summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.faq-list {
+  max-width: 360px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  text-align: left;
+}
+.faq-list p {
+  margin: 0 0 8px;
+}
+.faq-list p:last-child {
+  margin-bottom: 0;
+}
 .success-banner {
   display: flex;
   justify-content: space-between;
