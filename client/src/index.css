@@ -216,6 +216,56 @@ body {
   border: none;
   box-shadow: 0 5px 18px rgba(30, 36, 48, 0.06);
 }
+.attention-panel {
+  margin-bottom: 24px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.section-heading h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.attention-count {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pending-soft);
+  color: var(--pending);
+  font-weight: 700;
+}
+.attention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.attention-item:hover {
+  color: var(--accent-dark);
+}
+.attention-item span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.attention-item small,
+.empty-inline {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
 
 button {
   font-family: inherit;

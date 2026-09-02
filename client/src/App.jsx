@@ -1068,7 +1068,7 @@ export default function App() {
         const query = adminSearch.trim().toLowerCase();
         return [b.studentName, b.phone, b.company, b.round, b.domain, b.cabin, b.interviewer, b.cancelReason].some((value) => String(value || '').toLowerCase().includes(query));
       })
-      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || (a.date + a.time).localeCompare(b.date + b.time));
     const pagedBookings = filtered.slice((adminRequestPage - 1) * PAGE_SIZE, adminRequestPage * PAGE_SIZE);
 
     const filters = [
@@ -1129,12 +1129,16 @@ export default function App() {
       counts[cabin] = bookings.filter((booking) => booking.cabin === cabin && booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date >= todayStr()).length;
       return counts;
     }, {});
+    const attentionBookings = bookings
+      .filter((booking) => booking.status === 'pending' || (booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date === todayStr()))
+      .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || (a.date + a.time).localeCompare(b.date + b.time))
+      .slice(0, 4);
 
     return (
       <div className="container admin-container">
         <div className="admin-header">
           <div>
-            <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Admin dashboard</h2>
+            <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Welcome back, Admin</h2>
             <p className="admin-kicker">OPERATIONS OVERVIEW</p>
             <p className="loading-text">Updated {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
@@ -1173,6 +1177,29 @@ export default function App() {
           <button className="filter-chip" onClick={() => { setAdminDateFilter(null); setAdminFilter('approved'); setAdminTab('requests'); }}>Approved</button>
           <button className="btn btn-small btn-outline" onClick={() => exportDailySchedule(adminDateFilter || todayStr())}>Export {adminDateFilter || 'today'} CSV</button>
         </div>
+        <section className="card admin-section attention-panel" aria-labelledby="attention-heading">
+          <div className="section-heading">
+            <div>
+              <p className="admin-kicker">PRIORITY QUEUE</p>
+              <h3 id="attention-heading" className="serif">Needs attention</h3>
+            </div>
+            <span className="attention-count">{attentionBookings.length}</span>
+          </div>
+          {attentionBookings.length === 0 ? (
+            <p className="empty-inline">Everything is up to date.</p>
+          ) : attentionBookings.map((booking) => (
+            <button key={`attention-${booking.id}`} className="attention-item" onClick={() => {
+              setAdminTab('requests');
+              setAdminFilter(booking.status === 'pending' ? 'pending' : 'today');
+              setAdminDateFilter(booking.status === 'pending' ? null : todayStr());
+              setAdminRequestPage(1);
+            }}>
+              <span><strong>{booking.studentName}</strong><small>{booking.company} · {formatDateLabel(booking.date)} · {formatTimeLabel(booking.time)}</small></span>
+              <Badge text={statusLabel(booking.status)} kind={booking.status} />
+            </button>
+          ))}
+        </section>
+
         {todayBookings.filter((booking) => booking.status !== 'cancelled' && booking.status !== 'rejected').length === 0 && (
           <div className="card empty-state" style={{ margin: '0 0 20px' }}>No interviews today.</div>
         )}
