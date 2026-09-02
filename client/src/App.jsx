@@ -386,6 +386,16 @@ export default function App() {
   }
 
   async function setBookingStatus(id, status) {
+    const booking = bookings.find((item) => item.id === id);
+    if (status === 'approved' && booking) {
+      const duplicate = bookings.find((item) => item.id !== id &&
+        item.phone === booking.phone &&
+        item.status !== 'rejected' &&
+        item.status !== 'cancelled' &&
+        item.date === booking.date &&
+        rangesOverlap(item.time, item.duration || 30, booking.time, booking.duration || 30));
+      if (duplicate && !window.confirm(`Warning: ${booking.studentName} already has ${duplicate.company} at ${formatDateLabel(duplicate.date)} ${formatTimeLabel(duplicate.time)}. Approve this overlapping booking anyway?`)) return;
+    }
     if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : status === 'cancelled' ? 'Cancel' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
     try {

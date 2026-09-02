@@ -543,6 +543,18 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
   }
   const booking = db.bookings.find((b) => b.id === req.params.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (status === 'approved') {
+    const cabinClash = db.bookings.find((b) => b.id !== booking.id &&
+      b.status !== 'rejected' && b.status !== 'cancelled' &&
+      b.cabin === booking.cabin && b.date === booking.date &&
+      rangesOverlap(b.time, b.duration || 30, booking.time, booking.duration || 30));
+    if (cabinClash) return res.status(409).json({ error: 'That cabin slot overlaps another active booking.' });
+    const studentClash = db.bookings.find((b) => b.id !== booking.id &&
+      b.phone === booking.phone && b.status !== 'rejected' && b.status !== 'cancelled' &&
+      b.date === booking.date &&
+      rangesOverlap(b.time, b.duration || 30, booking.time, booking.duration || 30));
+    if (studentClash) return res.status(409).json({ error: 'This student already has an overlapping booking.' });
+  }
   const previousStatus = booking.status;
   booking.status = status;
   if (status === 'cancelled' && cancelReason) booking.cancelReason = String(cancelReason).trim();
