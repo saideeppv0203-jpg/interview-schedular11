@@ -132,6 +132,7 @@ export default function App() {
   const [adminError, setAdminError] = useState('');
   const [adminToken, setAdminToken] = useState(null);
   const [adminFilter, setAdminFilter] = useState('all');
+  const [adminDateFilter, setAdminDateFilter] = useState(null);
   const [adminTab, setAdminTab] = useState('requests'); // requests, students, slots
   const [adminSlotDate, setAdminSlotDate] = useState(todayStr());
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
@@ -573,6 +574,7 @@ export default function App() {
 
     const filtered = bookings
       .filter((b) => {
+        if (adminDateFilter && b.date !== adminDateFilter) return false;
         if (adminFilter === 'today') return b.date === todayStr();
         return adminFilter === 'all' || b.status === adminFilter;
       })
@@ -633,7 +635,15 @@ export default function App() {
           </p>
           <div className="daily-count-list">
             {dailyInterviewCounts.map((day) => (
-              <div key={day.date} className="daily-count-row">
+              <button
+                key={day.date}
+                className={`daily-count-row ${adminDateFilter === day.date ? 'selected' : ''}`}
+                onClick={() => {
+                  setAdminDateFilter(day.date);
+                  setAdminFilter('all');
+                  setAdminTab('requests');
+                }}
+              >
                 <div>
                   <div style={{ fontWeight: 500 }}>{formatDateLabel(day.date)}</div>
                   <div style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>
@@ -644,9 +654,18 @@ export default function App() {
                   <span className="serif">{day.total}</span>
                   <span>interview{day.total === 1 ? '' : 's'}</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
+          {adminDateFilter && (
+            <button
+              className="link-btn"
+              style={{ marginTop: 10 }}
+              onClick={() => setAdminDateFilter(null)}
+            >
+              Show all dates
+            </button>
+          )}
         </div>
 
         <div className="filter-row">
@@ -666,7 +685,10 @@ export default function App() {
                 <button
                   key={f.key}
                   className={`filter-chip ${adminFilter === f.key ? 'active' : ''}`}
-                  onClick={() => setAdminFilter(f.key)}
+                  onClick={() => {
+                    setAdminFilter(f.key);
+                    if (f.key === 'all' || f.key === 'today') setAdminDateFilter(null);
+                  }}
                 >
                   {f.label}
                 </button>

@@ -180,15 +180,25 @@ input {
   overflow: hidden;
 }
 .daily-count-row {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-top: 1px solid var(--border);
+  text-align: left;
 }
 .daily-count-row:first-child {
   border-top: none;
+}
+.daily-count-row:hover,
+.daily-count-row.selected {
+  background: var(--accent-soft);
 }
 .daily-count-total {
   display: flex;
