@@ -26,18 +26,18 @@ function rangesOverlap(startA, durA, startB, durB) {
 }
 function slotsForDuration(duration) {
   const slots = [];
-  for (let m = DAY_START_MIN; m + duration <= DAY_END_MIN; m += 30) {
+  for (let m = DAY_START_MIN; m + duration <= DAY_END_MIN; m += duration) {
     slots.push(minutesToHHMM(m));
   }
   return slots;
 }
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return dateKeyFromLocalDate(new Date());
 }
 function addDays(n) {
   const d = new Date();
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return dateKeyFromLocalDate(d);
 }
 function formatDateLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -64,6 +64,10 @@ function calendarDays(monthDate) {
 }
 function isPastSlot(dateStr, timeStr) {
   return new Date(`${dateStr}T${timeStr}:00`).getTime() <= Date.now();
+}
+
+function statusLabel(status) {
+  return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : status === 'cancelled' ? 'Cancelled' : 'Pending';
 }
 
 // ---- API helpers ----
@@ -107,6 +111,7 @@ function Badge({ text, kind }) {
   const map = {
     approved: { color: 'var(--approved)', bg: 'var(--approved-soft)' },
     rejected: { color: 'var(--danger)', bg: 'var(--danger-soft)' },
+    cancelled: { color: 'var(--danger)', bg: 'var(--danger-soft)' },
     pending: { color: 'var(--pending)', bg: 'var(--pending-soft)' },
     booked: { color: 'var(--booked)', bg: 'var(--booked-soft)' },
   };
@@ -125,6 +130,9 @@ export default function App() {
   const [students, setStudents] = useState({});
   const [bookings, setBookings] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
+  const [disabledCabins, setDisabledCabins] = useState([]);
+  const [loadError, setLoadError] = useState('');
+  const [stateLoading, setStateLoading] = useState(false);
 
   const [regName, setRegName] = useState('');
   const [regDomain, setRegDomain] = useState('');
@@ -151,15 +159,31 @@ export default function App() {
   const [adminSlotDate, setAdminSlotDate] = useState(todayStr());
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
   const [adminActionError, setAdminActionError] = useState('');
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminStudentSearch, setAdminStudentSearch] = useState('');
+  const [adminRequestPage, setAdminRequestPage] = useState(1);
+  const [adminStudentPage, setAdminStudentPage] = useState(1);
+  const [rescheduleBooking, setRescheduleBooking] = useState(null);
+  const [rescheduleCabin, setRescheduleCabin] = useState(CABINS[0]);
+  const [rescheduleDate, setRescheduleDate] = useState(todayStr());
+  const [rescheduleTime, setRescheduleTime] = useState('09:00');
+  const [rescheduleDuration, setRescheduleDuration] = useState(30);
+  const PAGE_SIZE = 8;
 
   const refresh = useCallback(async () => {
+    setStateLoading(true);
     try {
       const data = await apiGet('/state');
       setStudents(data.students || {});
       setBookings(data.bookings || []);
       setBlockedSlots(data.blockedSlots || []);
+      setDisabledCabins(data.disabledCabins || []);
+      setLoadError('');
     } catch (e) {
       console.error('Failed to load state', e);
+      setLoadError('We could not load the latest schedule.');
+    } finally {
+      setStateLoading(false);
     }
   }, []);
 
@@ -167,7 +191,8 @@ export default function App() {
     refresh();
     const savedPhone = localStorage.getItem('scheduler_student_phone');
     const savedAdminToken = sessionStorage.getItem('scheduler_admin_token');
-    if (savedAdminToken) {
+    const savedAdminExpiry = Number(sessionStorage.getItem('scheduler_admin_expires') || 0);
+    if (savedAdminToken && savedAdminExpiry > Date.now()) {
       setAdminToken(savedAdminToken);
       setView('admin');
     } else if (savedPhone) {
@@ -177,9 +202,24 @@ export default function App() {
           setStudent(rec);
           setView('portal');
         }
-      });
+      }).catch(() => setLoadError('We could not load your student account.'));
     }
   }, [refresh]);
+
+  useEffect(() => {
+    if (!adminToken) return undefined;
+    const id = setInterval(() => {
+      const expiry = Number(sessionStorage.getItem('scheduler_admin_expires') || 0);
+      if (!expiry || expiry <= Date.now()) {
+        setAdminToken(null);
+        sessionStorage.removeItem('scheduler_admin_token');
+        sessionStorage.removeItem('scheduler_admin_expires');
+        setView('admin-login');
+        setAdminError('Your admin session expired. Please sign in again.');
+      }
+    }, 10000);
+    return () => clearInterval(id);
+  }, [adminToken]);
 
   useEffect(() => {
     const id = setInterval(refresh, 15000);
@@ -190,8 +230,9 @@ export default function App() {
   const maxDate = dateOptions[dateOptions.length - 1];
 
   function isSlotFree(cabin, date, time, dur, list, blocked) {
+    if (disabledCabins.includes(cabin)) return { free: false, mine: null, blocked: true, disabled: true };
     const bookingHit = (list || bookings).find(
-      (b) => b.cabin === cabin && b.date === date && b.status !== 'rejected' && rangesOverlap(b.time, b.duration || 30, time, dur)
+      (b) => b.cabin === cabin && b.date === date && b.status !== 'rejected' && b.status !== 'cancelled' && rangesOverlap(b.time, b.duration || 30, time, dur)
     );
     if (bookingHit) return { free: false, mine: bookingHit, blocked: false };
     const blockedHit = (blocked || blockedSlots).find(
@@ -243,6 +284,12 @@ export default function App() {
       setModalError('Enter the company name and interview round.');
       return;
     }
+    const studentClash = bookings.find((b) => b.phone === student.phone && b.status !== 'rejected' && b.status !== 'cancelled' &&
+      b.date === modalSlot.date && rangesOverlap(b.time, b.duration || 30, modalSlot.time, modalSlot.duration));
+    if (studentClash) {
+      setModalError('You already have an interview booked during this time.');
+      return;
+    }
     setLoading(true);
     try {
       await apiPost('/bookings', {
@@ -255,6 +302,7 @@ export default function App() {
         domain: student.domain,
         company: company.trim(),
         round: round.trim(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       await refresh();
       setModalSlot(null);
@@ -272,6 +320,7 @@ export default function App() {
       const { token } = await apiPost('/admin/login', { email: adminEmail, password: adminPassword });
       setAdminToken(token);
       sessionStorage.setItem('scheduler_admin_token', token);
+      sessionStorage.setItem('scheduler_admin_expires', String(Date.now() + 30 * 60 * 1000));
       await refresh();
       setView('admin');
     } catch (err) {
@@ -283,11 +332,13 @@ export default function App() {
   function logoutAdmin() {
     setAdminToken(null);
     sessionStorage.removeItem('scheduler_admin_token');
+    sessionStorage.removeItem('scheduler_admin_expires');
     setAdminEmail(''); setAdminPassword(''); setAdminError('');
     setView('landing');
   }
 
   async function setBookingStatus(id, status) {
+    if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
     try {
       await apiPatch(`/bookings/${id}`, { status }, adminToken);
@@ -341,6 +392,60 @@ export default function App() {
     setLoading(true);
     try {
       await apiPost('/slots/toggle', { cabin, date, time, duration: dur }, adminToken);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
+    }
+    setLoading(false);
+  }
+
+  function openReschedule(booking) {
+    setRescheduleBooking(booking);
+    setRescheduleCabin(booking.cabin);
+    setRescheduleDate(booking.date);
+    setRescheduleTime(booking.time);
+    setRescheduleDuration(booking.duration || 30);
+    setAdminActionError('');
+  }
+
+  async function saveReschedule(e) {
+    e.preventDefault();
+    if (!rescheduleBooking) return;
+    setAdminActionError('');
+    setLoading(true);
+    try {
+      const path = adminToken ? `/bookings/${encodeURIComponent(rescheduleBooking.id)}` : `/student/bookings/${encodeURIComponent(rescheduleBooking.id)}`;
+      const body = adminToken
+        ? { cabin: rescheduleCabin, date: rescheduleDate, time: rescheduleTime, duration: rescheduleDuration }
+        : { phone: student.phone, cabin: rescheduleCabin, date: rescheduleDate, time: rescheduleTime, duration: rescheduleDuration, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      await apiPatch(path, body, adminToken);
+      await refresh();
+      setRescheduleBooking(null);
+    } catch (err) {
+      setAdminActionError(err.message);
+      setModalError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function cancelStudentBooking(booking) {
+    if (!window.confirm('Cancel this interview request?')) return;
+    setModalError('');
+    setLoading(true);
+    try {
+      await apiPatch(`/student/bookings/${encodeURIComponent(booking.id)}`, { phone: student.phone, action: 'cancel' });
+      await refresh();
+    } catch (err) {
+      setModalError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function toggleCabin(cabin) {
+    setAdminActionError('');
+    setLoading(true);
+    try {
+      await apiPatch(`/cabins/${encodeURIComponent(cabin)}`, { enabled: disabledCabins.includes(cabin) }, adminToken);
       await refresh();
     } catch (err) {
       setAdminActionError(err.message);
@@ -419,6 +524,13 @@ export default function App() {
             <h2 className="serif" style={{ fontSize: '1.4rem' }}>Hi, {student.name}</h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain}</p>
           </div>
+          {loadError && (
+            <div className="card retry-banner">
+              <span>{loadError}</span>
+              <button className="btn btn-small btn-outline" onClick={refresh}>Retry</button>
+            </div>
+          )}
+          {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
           <button className="link-btn" onClick={logoutStudent}>Sign out</button>
         </div>
 
@@ -443,7 +555,7 @@ export default function App() {
           </div>
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: 16 }}>
-          {formatDateLabel(selectedDate)} · Interview hours 8:00 AM – 10:00 PM
+          {formatDateLabel(selectedDate)} · Showing {duration === 60 ? '1-hour' : '30-minute'} time slots · Interview hours 8:00 AM – 10:00 PM · {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </p>
 
         {myBookings.filter((b) => b.status === 'approved').map((b) => (
@@ -473,7 +585,7 @@ export default function App() {
               <div key={time} className="table-row">
                 <div className="table-cell label">{formatTimeLabel(time)}</div>
                 {CABINS.map((cabin) => {
-                  const { free, mine, blocked } = isSlotFree(cabin, selectedDate, time, duration);
+                  const { free, mine, blocked, disabled } = isSlotFree(cabin, selectedDate, time, duration);
                   let content;
                   if (past) {
                     content = <span style={{ fontSize: '0.75rem', color: 'var(--ink-soft)' }}>Past</span>;
@@ -485,7 +597,7 @@ export default function App() {
                       </div>
                     );
                   } else if (!free) {
-                    content = <Badge text={blocked ? 'Unavailable' : 'Full'} kind="booked" />;
+                    content = <Badge text={disabled ? 'Cabin disabled' : blocked ? 'Unavailable' : 'Full'} kind="booked" />;
                   } else {
                     content = (
                       <button className="btn btn-small" style={{ background: 'var(--accent-soft)', color: 'var(--accent-dark)' }}
@@ -514,9 +626,33 @@ export default function App() {
                     {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min
                   </div>
                 </div>
-                <Badge text={b.status === 'approved' ? 'Approved' : b.status === 'rejected' ? 'Rejected' : 'Pending'} kind={b.status} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Badge text={statusLabel(b.status)} kind={b.status} />
+                  {b.status !== 'cancelled' && !isPastSlot(b.date, b.time) && (
+                    <>
+                      <button className="btn btn-small btn-outline" onClick={() => openReschedule(b)}>Reschedule</button>
+                      <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => cancelStudentBooking(b)}>Cancel</button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {rescheduleBooking && !adminToken && (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 12 }}>Reschedule interview</h3>
+              <form onSubmit={saveReschedule}>
+                <div className="field"><label>Cabin</label><select value={rescheduleCabin} onChange={(e) => setRescheduleCabin(e.target.value)}>{CABINS.map((cabin) => <option key={cabin} value={cabin} disabled={disabledCabins.includes(cabin)}>{cabin}{disabledCabins.includes(cabin) ? ' (disabled)' : ''}</option>)}</select></div>
+                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} /></div>
+                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{slotsForDuration(rescheduleDuration).map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
+                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => setRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+                {modalError && <p className="error-text">{modalError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
+              </form>
+            </div>
           </div>
         )}
 
@@ -527,6 +663,10 @@ export default function App() {
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)', marginBottom: 16 }}>
                 {modalSlot.cabin} · {formatDateLabel(modalSlot.date)} · {formatTimeLabel(modalSlot.time)} · {modalSlot.duration} min
               </p>
+               {bookings.some((b) => b.phone === student.phone && b.status !== 'rejected' && b.status !== 'cancelled' &&
+                b.date === modalSlot.date && rangesOverlap(b.time, b.duration || 30, modalSlot.time, modalSlot.duration)) && (
+                <p className="warning-text">You already have an interview during this time. Choose another slot.</p>
+               )}
               <form onSubmit={submitBooking}>
                 <div className="field">
                   <label>Company name</label>
@@ -590,9 +730,13 @@ export default function App() {
       .filter((b) => {
         if (adminDateFilter && b.date !== adminDateFilter) return false;
         if (adminFilter === 'today') return b.date === todayStr();
-        return adminFilter === 'all' || b.status === adminFilter;
+        if (!(adminFilter === 'all' || b.status === adminFilter)) return false;
+        if (!adminSearch.trim()) return true;
+        const query = adminSearch.trim().toLowerCase();
+        return [b.studentName, b.phone, b.company, b.round, b.domain, b.cabin].some((value) => String(value || '').toLowerCase().includes(query));
       })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    const pagedBookings = filtered.slice((adminRequestPage - 1) * PAGE_SIZE, adminRequestPage * PAGE_SIZE);
 
     const filters = [
       { key: 'all', label: 'All' },
@@ -608,7 +752,10 @@ export default function App() {
       { key: 'slots', label: 'Slot availability' },
     ];
 
-    const studentList = Object.values(students).sort((a, b) => a.name.localeCompare(b.name));
+    const studentList = Object.values(students)
+      .filter((s) => !adminStudentSearch.trim() || [s.name, s.domain, s.phone].some((value) => String(value || '').toLowerCase().includes(adminStudentSearch.trim().toLowerCase())))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const pagedStudents = studentList.slice((adminStudentPage - 1) * PAGE_SIZE, adminStudentPage * PAGE_SIZE);
     const adminTimes = slotsForDuration(adminSlotDuration);
     const dailyInterviewCounts = dateOptions.map((date) => {
       const dayBookings = bookings.filter((booking) => booking.date === date);
@@ -632,10 +779,13 @@ export default function App() {
         .sort((a, b) => a.name.localeCompare(b.name))
       : [];
     const calendarDateCounts = bookings.reduce((counts, booking) => {
-      counts[booking.date] = (counts[booking.date] || 0) + 1;
+      if (!counts[booking.date]) counts[booking.date] = { total: 0, statuses: {} };
+      counts[booking.date].total += 1;
+      counts[booking.date].statuses[booking.status] = (counts[booking.date].statuses[booking.status] || 0) + 1;
       return counts;
     }, {});
     const calendarDates = calendarDays(adminCalendarMonth);
+    const selectedCalendarBookings = adminDateFilter ? bookings.filter((booking) => booking.date === adminDateFilter) : [];
 
     return (
       <div className="container">
@@ -643,6 +793,13 @@ export default function App() {
           <h2 className="serif" style={{ fontSize: '1.5rem' }}>Admin dashboard</h2>
           <button className="link-btn" onClick={logoutAdmin}>Sign out</button>
         </div>
+        {loadError && (
+          <div className="card retry-banner">
+            <span>{loadError}</span>
+            <button className="btn btn-small btn-outline" onClick={refresh}>Retry</button>
+          </div>
+        )}
+        {stateLoading && <p className="loading-text">Refreshing schedule…</p>}
 
         <div className="stat-grid">
           {[
@@ -662,6 +819,14 @@ export default function App() {
           <div className="calendar-heading">
             <h3 className="serif" style={{ fontSize: '1.15rem', margin: 0 }}>Interview calendar</h3>
             <div className="calendar-navigation">
+              <button className="btn btn-small btn-outline" onClick={() => {
+                const now = new Date();
+                setAdminCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                setAdminDateFilter(todayStr());
+                setAdminFilter('all');
+                setAdminTab('requests');
+                setAdminRequestPage(1);
+              }}>Today</button>
               <button
                 className="btn btn-small btn-outline"
                 onClick={() => setAdminCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}
@@ -694,10 +859,17 @@ export default function App() {
                     setAdminDateFilter(date);
                     setAdminFilter('all');
                     setAdminTab('requests');
+                    setAdminRequestPage(1);
                   }}
                 >
                   <span>{Number(date.slice(-2))}</span>
-                  {calendarDateCounts[date] ? <strong>{calendarDateCounts[date]}</strong> : <span />}
+                  {calendarDateCounts[date] ? (
+                    <span className="calendar-statuses" aria-label={`${calendarDateCounts[date].total} interviews`}>
+                      {Object.entries(calendarDateCounts[date].statuses).map(([status, count]) => (
+                        <i key={status} className={`calendar-status status-${status}`} title={`${count} ${status}`} />
+                      ))}
+                    </span>
+                  ) : <span />}
                 </button>
               ) : <div key={`empty-${index}`} className="calendar-day empty" />
             ))}
@@ -705,13 +877,18 @@ export default function App() {
           {adminDateFilter && (
             <div className="calendar-selection">
               <strong>{formatDateLabel(adminDateFilter)}</strong>
-              <span>{calendarDateCounts[adminDateFilter] || 0} interview{calendarDateCounts[adminDateFilter] === 1 ? '' : 's'}</span>
+              <span>{calendarDateCounts[adminDateFilter] ? calendarDateCounts[adminDateFilter].total : 0} interview{calendarDateCounts[adminDateFilter] && calendarDateCounts[adminDateFilter].total === 1 ? '' : 's'}</span>
               <div className="calendar-student-names">
                 {selectedDateStudentCounts.length
                   ? selectedDateStudentCounts.map((studentCount) => (
                     <span key={studentCount.name}>{studentCount.name}</span>
                   ))
                   : <span>No students scheduled.</span>}
+              </div>
+              <div className="calendar-interview-details">
+                {selectedCalendarBookings.length === 0 ? <span>No interview details for this date.</span> : selectedCalendarBookings.map((booking) => (
+                  <div key={booking.id}><strong>{formatTimeLabel(booking.time)} · {booking.company}</strong><span>{booking.studentName} · {booking.cabin} · {statusLabel(booking.status)}</span></div>
+                ))}
               </div>
             </div>
           )}
@@ -731,6 +908,7 @@ export default function App() {
                   setAdminDateFilter(day.date);
                   setAdminFilter('all');
                   setAdminTab('requests');
+                  setAdminRequestPage(1);
                 }}
               >
                 <div>
@@ -789,6 +967,7 @@ export default function App() {
                   className={`filter-chip ${adminFilter === f.key ? 'active' : ''}`}
                   onClick={() => {
                     setAdminFilter(f.key);
+                    setAdminRequestPage(1);
                     if (f.key === 'all' || f.key === 'today') setAdminDateFilter(null);
                   }}
                 >
@@ -796,12 +975,15 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <div className="search-row">
+              <input className="search-input" value={adminSearch} onChange={(e) => { setAdminSearch(e.target.value); setAdminRequestPage(1); }} placeholder="Search student, company, phone, round…" aria-label="Search interviews" />
+            </div>
 
             {filtered.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No requests in this view.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {filtered.map((b) => (
+                {pagedBookings.map((b) => (
                   <div key={b.id} className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '0.9rem' }}>
@@ -815,7 +997,7 @@ export default function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                        <Badge text={b.status === 'approved' ? 'Approved' : b.status === 'rejected' ? 'Rejected' : 'Pending'} kind={b.status} />
+                        <Badge text={statusLabel(b.status)} kind={b.status} />
                         {b.status === 'pending' && (
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button className="btn btn-small" style={{ background: 'var(--approved)', color: '#fff' }} onClick={() => setBookingStatus(b.id, 'approved')}>
@@ -824,12 +1006,20 @@ export default function App() {
                             <button className="btn btn-small btn-outline" onClick={() => setBookingStatus(b.id, 'rejected')}>
                               Reject
                             </button>
+                            <button className="btn btn-small btn-outline" onClick={() => openReschedule(b)}>
+                              Reschedule
+                            </button>
+                           <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => setBookingStatus(b.id, 'cancelled')}>
+                             Cancel
+                           </button>
                           </div>
                         )}
                         {b.status !== 'pending' && (
-                          <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteBooking(b)}>
-                            Delete
-                          </button>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {b.status !== 'cancelled' && <button className="btn btn-small btn-outline" onClick={() => openReschedule(b)}>Reschedule</button>}
+                            {b.status !== 'cancelled' && <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => setBookingStatus(b.id, 'cancelled')}>Cancel</button>}
+                            <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteBooking(b)}>Delete</button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -837,15 +1027,25 @@ export default function App() {
                 ))}
               </div>
             )}
+            {filtered.length > PAGE_SIZE && (
+              <div className="pagination">
+                <button className="btn btn-small btn-outline" disabled={adminRequestPage === 1} onClick={() => setAdminRequestPage((page) => page - 1)}>Previous</button>
+                <span>Page {adminRequestPage} of {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+                <button className="btn btn-small btn-outline" disabled={adminRequestPage >= Math.ceil(filtered.length / PAGE_SIZE)} onClick={() => setAdminRequestPage((page) => page + 1)}>Next</button>
+              </div>
+            )}
           </>
         )}
 
         {adminTab === 'students' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="search-row">
+              <input className="search-input" value={adminStudentSearch} onChange={(e) => { setAdminStudentSearch(e.target.value); setAdminStudentPage(1); }} placeholder="Search name, domain, or phone…" aria-label="Search students" />
+            </div>
             {studentList.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No students registered yet.</p>
             ) : (
-              studentList.map((s) => (
+              pagedStudents.map((s) => (
                 <div key={s.phone} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ fontSize: '0.9rem' }}>
                     <div style={{ fontWeight: 500 }}>{s.name} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>· {s.domain}</span></div>
@@ -865,6 +1065,13 @@ export default function App() {
                   </div>
                 </div>
               ))
+            )}
+            {studentList.length > PAGE_SIZE && (
+              <div className="pagination">
+                <button className="btn btn-small btn-outline" disabled={adminStudentPage === 1} onClick={() => setAdminStudentPage((page) => page - 1)}>Previous</button>
+                <span>Page {adminStudentPage} of {Math.ceil(studentList.length / PAGE_SIZE)}</span>
+                <button className="btn btn-small btn-outline" disabled={adminStudentPage >= Math.ceil(studentList.length / PAGE_SIZE)} onClick={() => setAdminStudentPage((page) => page + 1)}>Next</button>
+              </div>
             )}
           </div>
         )}
@@ -889,6 +1096,12 @@ export default function App() {
                 </select>
               </div>
             </div>
+            <div className="cabin-management">
+              {CABINS.map((cabin) => {
+                const enabled = !disabledCabins.includes(cabin);
+                return <div key={cabin} className="card cabin-row"><span><strong>{cabin}</strong><small>{enabled ? 'Enabled for booking' : 'Disabled for all new bookings'}</small></span><button className="btn btn-small btn-outline" onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button></div>;
+              })}
+            </div>
 
             <div className="table">
               <div className="table-header">
@@ -901,9 +1114,11 @@ export default function App() {
                 <div key={time} className="table-row">
                   <div className="table-cell label">{formatTimeLabel(time)}</div>
                   {CABINS.map((cabin) => {
-                    const { free, mine, blocked } = isSlotFree(cabin, adminSlotDate, time, adminSlotDuration);
+                    const { free, mine, blocked, disabled } = isSlotFree(cabin, adminSlotDate, time, adminSlotDuration);
                     let content;
-                    if (mine) {
+                    if (disabled) {
+                      content = <button className="btn btn-small" style={{ background: 'var(--danger-soft)', color: 'var(--danger)' }} onClick={() => toggleCabin(cabin)}>Cabin disabled</button>;
+                    } else if (mine) {
                       content = <Badge text="Booked" kind="booked" />;
                     } else if (blocked) {
                       content = (
@@ -924,6 +1139,21 @@ export default function App() {
                   })}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {rescheduleBooking && adminToken && (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <h3 className="serif" style={{ fontSize: '1.2rem', marginBottom: 12 }}>Reschedule interview</h3>
+              <form onSubmit={saveReschedule}>
+                <div className="field"><label>Cabin</label><select value={rescheduleCabin} onChange={(e) => setRescheduleCabin(e.target.value)}>{CABINS.map((cabin) => <option key={cabin} value={cabin} disabled={disabledCabins.includes(cabin)}>{cabin}{disabledCabins.includes(cabin) ? ' (disabled)' : ''}</option>)}</select></div>
+                <div className="field"><label>Date</label><input type="date" min={todayStr()} max={maxDate} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} /></div>
+                <div className="field"><label>Start time</label><select value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)}>{slotsForDuration(rescheduleDuration).map((t) => <option key={t} value={t}>{formatTimeLabel(t)}</option>)}</select></div>
+                <div className="field"><label>Duration</label><select value={rescheduleDuration} onChange={(e) => setRescheduleDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+                {adminActionError && <p className="error-text">{adminActionError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-primary" disabled={loading}>Save</button><button type="button" className="btn btn-outline" onClick={() => setRescheduleBooking(null)}>Close</button></div>
+              </form>
             </div>
           </div>
         )}

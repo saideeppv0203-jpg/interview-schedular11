@@ -98,6 +98,13 @@ input {
   color: var(--danger);
   font-size: 0.85rem;
 }
+.warning-text {
+  color: var(--pending);
+  background: var(--pending-soft);
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
 
 .link-btn {
   background: none;
@@ -279,6 +286,21 @@ input {
   color: var(--accent-dark);
   font-size: 0.75rem;
 }
+.calendar-statuses {
+  display: flex;
+  gap: 3px;
+  min-height: 7px;
+}
+.calendar-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: block;
+  background: var(--pending);
+}
+.calendar-status.status-approved { background: var(--approved); }
+.calendar-status.status-rejected,
+.calendar-status.status-cancelled { background: var(--danger); }
 .calendar-day.empty {
   border-color: transparent;
   background: transparent;
@@ -344,3 +366,74 @@ input {
   background: var(--accent);
   color: #fff;
 }
+.search-row {
+  margin-bottom: 14px;
+}
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 16px 0 8px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.retry-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  border-color: var(--danger);
+}
+.loading-text {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  margin: 0 0 12px;
+}
+.calendar-interview-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 100%;
+  margin-top: 10px;
+}
+.calendar-interview-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  background: var(--panel-alt);
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+.calendar-interview-details span { color: var(--ink-soft); }
+.cabin-management {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.cabin-row {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cabin-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.85rem;
+}
+.cabin-row small { color: var(--ink-soft); font-size: 0.72rem; }
