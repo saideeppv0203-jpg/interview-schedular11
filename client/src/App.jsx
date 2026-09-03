@@ -72,7 +72,7 @@ function isPastSlot(dateStr, timeStr) {
 }
 
 function statusLabel(status) {
-  return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : status === 'cancelled' ? 'Cancelled' : 'Pending';
+  return status === 'approved' ? 'Approved' : status === 'completed' ? 'Completed' : status === 'rejected' ? 'Rejected' : status === 'cancelled' ? 'Cancelled' : 'Pending';
 }
 
 // ---- API helpers ----
@@ -124,9 +124,19 @@ async function apiDelete(path, token) {
   return readApiResponse(res);
 }
 
+async function apiDeleteStudentBooking(path, phone) {
+  const res = await fetch(apiUrl(path), {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  return readApiResponse(res);
+}
+
 function Badge({ text, kind }) {
   const map = {
     approved: { color: 'var(--approved)', bg: 'var(--approved-soft)' },
+    completed: { color: 'var(--approved)', bg: 'var(--approved-soft)' },
     rejected: { color: 'var(--rejected)', bg: 'var(--rejected-soft)' },
     cancelled: { color: 'var(--cancelled)', bg: 'var(--cancelled-soft)' },
     pending: { color: 'var(--pending)', bg: 'var(--pending-soft)' },
@@ -665,6 +675,20 @@ export default function App() {
     } catch (error) {
       setBookingSuccess({ message: details });
     }
+
+    async function deleteCompletedBooking(booking) {
+      if (!window.confirm(`Delete the completed interview with ${booking.company}?`)) return;
+      setLoading(true);
+      setBookingSuccess(null);
+      try {
+        await apiDeleteStudentBooking(`/student/bookings/${encodeURIComponent(booking.id)}`, student.phone);
+        setBookingSuccess({ message: 'Completed interview deleted from your history.' });
+        await refresh();
+      } catch (err) {
+        setBookingSuccess({ message: err.message });
+      }
+      setLoading(false);
+    }
   }
 
   function exportDailySchedule(date) {
@@ -754,7 +778,8 @@ export default function App() {
       .filter((b) => b.phone === student.phone)
       .sort(compareScheduleTime);
     const historyBookings = myBookings.filter((b) => (
-      (!historyStatus || historyStatus === 'all' || b.status === historyStatus) &&
+      (!historyStatus || historyStatus === 'all' ||
+        (historyStatus === 'completed' ? isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' : b.status === historyStatus)) &&
       (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
     ));
     const upcomingBookings = historyBookings.filter((b) => !isPastSlot(b.date, b.time));
@@ -986,11 +1011,13 @@ export default function App() {
         <div className="search-row" style={{ display: 'flex', gap: 8 }}>
           <input className="search-input" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Search company or round…" aria-label="Search interview history" />
           <select className="search-input" style={{ width: 150 }} value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)}>
-            <option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option>
+            <option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="completed">Completed</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option>
           </select>
         </div>
         {historyBookings.length === 0 ? (
-          <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No matching interview history. Book a slot above.</p>
+          <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
+            {historyStatus === 'completed' ? 'No completed interviews yet.' : 'No matching interview history. Book a slot above.'}
+          </p>
         ) : (
           <div className="history-groups">
             {[
@@ -1011,17 +1038,19 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Badge text={statusLabel(b.status)} kind={b.status} />
+                  <Badge text={isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'Completed' : statusLabel(b.status)} kind={isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'completed' : b.status} />
                   <button className="btn btn-small btn-outline" onClick={() => copyBookingDetails(b)}>Copy details</button>
                   </div>
-                  {b.status !== 'cancelled' && !isPastSlot(b.date, b.time) && (
+                  {isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? (
+                    <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteCompletedBooking(b)} disabled={loading}>Delete</button>
+                  ) : b.status !== 'cancelled' && !isPastSlot(b.date, b.time) && (
                     <>
                       <button className="btn btn-small btn-outline" onClick={() => openReschedule(b)}>Reschedule</button>
                       <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => cancelStudentBooking(b)}>Cancel</button>
                     </>
                   )}
                 </div>
-                <div className="status-help">{b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
+                <div className="status-help">{isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'Completed: this interview has already taken place.' : b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
               </div>
             ))}
               </div>

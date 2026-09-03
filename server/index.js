@@ -664,6 +664,22 @@ app.patch('/api/student/bookings/:id', (req, res) => {
   res.json({ booking });
 });
 
+// Students may remove only their own completed interviews from their history.
+app.delete('/api/student/bookings/:id', (req, res) => {
+  const phone = String(req.body && req.body.phone || '').trim();
+  const index = db.bookings.findIndex((booking) => booking.id === req.params.id && booking.phone === phone);
+  if (index < 0) return res.status(404).json({ error: 'Completed interview not found.' });
+  const booking = db.bookings[index];
+  const isPast = new Date(`${booking.date}T${booking.time}:00`).getTime() <= Date.now();
+  if (!isPast || booking.status === 'cancelled' || booking.status === 'rejected') {
+    return res.status(400).json({ error: 'Only completed interviews can be deleted.' });
+  }
+  db.bookings.splice(index, 1);
+  recordActivity('deleted', booking, 'Student deleted a completed interview from their history.');
+  persistData();
+  res.json({ deleted: true });
+});
+
 // Students can update their profile details; the phone number remains their account identifier.
 app.patch('/api/students/:phone/profile', (req, res) => {
   const student = db.students[req.params.phone];
@@ -729,6 +745,7 @@ app.post('/api/cabins', requireAdmin, (req, res) => {
 app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
   const index = db.bookings.findIndex((booking) => booking.id === req.params.id);
   if (index < 0) return res.status(404).json({ error: 'Booking not found.' });
+  const booking = db.bookings[index];
   db.bookings.splice(index, 1);
   recordActivity('deleted', booking, 'Admin deleted the booking.');
   persistData();
