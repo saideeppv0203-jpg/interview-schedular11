@@ -55,6 +55,11 @@ All admin settings live in `server/.env` (copy from `server/.env.example`):
 **Change `ADMIN_PASSWORD` and `ADMIN_TOKEN` before deploying** — don't ship
 the example values.
 
+If you host the Vite client separately from the Express API, set
+`VITE_API_BASE_URL` in `client/.env` to the backend origin (without a trailing
+slash), then rebuild the client. Leave it empty when Express serves
+`client/dist`, or when using the local Vite proxy.
+
 ## Building for production
 
 ```bash

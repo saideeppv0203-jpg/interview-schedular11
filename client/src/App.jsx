@@ -19,6 +19,9 @@ function toMinutes(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
 }
+function compareScheduleTime(a, b) {
+  return `${a.date || ''}T${a.time || ''}`.localeCompare(`${b.date || ''}T${b.time || ''}`);
+}
 function rangesOverlap(startA, durA, startB, durB) {
   const aS = toMinutes(startA);
   const aE = aS + durA;
@@ -73,40 +76,52 @@ function statusLabel(status) {
 }
 
 // ---- API helpers ----
-async function apiGet(path) {
-  const res = await fetch(`/api${path}`);
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+async function readApiResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const responseText = await res.text();
+    const detail = responseText.trim().startsWith('<!')
+      ? 'The server returned an HTML page instead of an API response. Check that the API URL is configured correctly.'
+      : `The server returned an unexpected response (${res.status}).`;
+    throw new Error(detail);
+  }
+
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
+
+function apiUrl(path) {
+  return `${API_BASE_URL}/api${path}`;
+}
+
+async function apiGet(path) {
+  return readApiResponse(await fetch(apiUrl(path)));
+}
 async function apiPost(path, body, token) {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
+  return readApiResponse(res);
 }
 async function apiPatch(path, body, token) {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(apiUrl(path), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
+  return readApiResponse(res);
 }
 async function apiDelete(path, token) {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(apiUrl(path), {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
+  return readApiResponse(res);
 }
 
 function Badge({ text, kind }) {
@@ -191,6 +206,7 @@ export default function App() {
   const [adminFilter, setAdminFilter] = useState('all');
   const [adminDateFilter, setAdminDateFilter] = useState(null);
   const [adminCalendarMonth, setAdminCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [showEmptyDays, setShowEmptyDays] = useState(false);
   const [adminTab, setAdminTab] = useState('requests'); // requests, students, slots
   const [adminSlotDate, setAdminSlotDate] = useState(todayStr());
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
@@ -652,7 +668,9 @@ export default function App() {
   }
 
   function exportDailySchedule(date) {
-    const rows = bookings.filter((booking) => booking.date === date && booking.status !== 'cancelled' && booking.status !== 'rejected');
+    const rows = bookings
+      .filter((booking) => booking.date === date && booking.status !== 'cancelled' && booking.status !== 'rejected')
+      .sort(compareScheduleTime);
     const headers = ['Date', 'Time', 'Cabin', 'Student', 'Phone', 'Company', 'Round', 'Interviewer', 'Duration', 'Status'];
     const values = rows.map((booking) => [booking.date, booking.time, booking.cabin, booking.studentName, booking.phone, booking.company, booking.round, booking.interviewer || '', booking.duration || 30, booking.status]);
     const csv = [headers, ...values].map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -734,7 +752,7 @@ export default function App() {
   if (view === 'portal' && student) {
     const myBookings = bookings
       .filter((b) => b.phone === student.phone)
-      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      .sort(compareScheduleTime);
     const historyBookings = myBookings.filter((b) => (
       (!historyStatus || historyStatus === 'all' || b.status === historyStatus) &&
       (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
@@ -1149,7 +1167,7 @@ export default function App() {
         const query = adminSearch.trim().toLowerCase();
         return [b.studentName, b.phone, b.company, b.round, b.domain, b.cabin, b.interviewer, b.cancelReason].some((value) => String(value || '').toLowerCase().includes(query));
       })
-      .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || (a.date + a.time).localeCompare(b.date + b.time));
+      .sort(compareScheduleTime);
     const pagedBookings = filtered.slice((adminRequestPage - 1) * PAGE_SIZE, adminRequestPage * PAGE_SIZE);
 
     const filters = [
@@ -1188,6 +1206,9 @@ export default function App() {
         cancelled: dayBookings.filter((booking) => booking.status === 'cancelled').length,
       };
     });
+    const visibleDailyInterviewCounts = dailyInterviewCounts.filter((day) => (
+      showEmptyDays || day.total > 0 || adminDateFilter === day.date
+    ));
     const selectedDateStudentCounts = adminDateFilter
       ? Object.values(bookings
         .filter((booking) => booking.date === adminDateFilter)
@@ -1206,14 +1227,19 @@ export default function App() {
       return counts;
     }, {});
     const calendarDates = calendarDays(adminCalendarMonth);
-    const selectedCalendarBookings = adminDateFilter ? bookings.filter((booking) => booking.date === adminDateFilter) : [];
+    const selectedCalendarBookings = adminDateFilter
+      ? bookings.filter((booking) => booking.date === adminDateFilter).sort(compareScheduleTime)
+      : [];
+    const orderedInterviewerAvailability = [...interviewerAvailability].sort((a, b) => (
+      compareScheduleTime(a, b) || String(a.interviewer || '').localeCompare(String(b.interviewer || ''))
+    ));
     const activeCabinCounts = CABINS.reduce((counts, cabin) => {
       counts[cabin] = bookings.filter((booking) => booking.cabin === cabin && booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date >= todayStr()).length;
       return counts;
     }, {});
     const attentionBookings = bookings
       .filter((booking) => booking.status === 'pending' || (booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date === todayStr()))
-      .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || (a.date + a.time).localeCompare(b.date + b.time))
+      .sort(compareScheduleTime)
       .slice(0, 4);
 
     return (
@@ -1367,12 +1393,19 @@ export default function App() {
         </div>
 
         <div className="card admin-section" style={{ marginBottom: 24 }}>
-          <h3 className="serif" style={{ fontSize: '1.15rem', margin: '0 0 4px' }}>Interviews by day</h3>
-          <p style={{ color: 'var(--ink-soft)', fontSize: '0.85rem', margin: '0 0 12px' }}>
-            Upcoming interview requests for the next {DAYS_AHEAD} days
-          </p>
+          <div className="daily-count-heading">
+            <div>
+              <h3 className="serif" style={{ fontSize: '1.15rem', margin: '0 0 4px' }}>Interviews by day</h3>
+              <p style={{ color: 'var(--ink-soft)', fontSize: '0.85rem', margin: 0 }}>
+                Upcoming interview requests for the next {DAYS_AHEAD} days
+              </p>
+            </div>
+            <button className="btn btn-small btn-outline" onClick={() => setShowEmptyDays((visible) => !visible)}>
+              {showEmptyDays ? 'Hide empty days' : 'Show all days'}
+            </button>
+          </div>
           <div className="daily-count-list">
-            {dailyInterviewCounts.map((day) => (
+            {visibleDailyInterviewCounts.map((day) => (
               <button
                 key={day.date}
                 className={`daily-count-row ${adminDateFilter === day.date ? 'selected' : ''}`}
@@ -1396,6 +1429,9 @@ export default function App() {
               </button>
             ))}
           </div>
+          {visibleDailyInterviewCounts.length === 0 && (
+            <p className="empty-inline">No interviews scheduled in the next {DAYS_AHEAD} days.</p>
+          )}
           {adminDateFilter && (
             <>
               <div className="daily-student-counts">
@@ -1465,7 +1501,7 @@ export default function App() {
               <button className="btn btn-primary" disabled={loading}>Toggle availability</button>
             </form>
             <div className="availability-list">
-              {interviewerAvailability.length === 0 ? <p className="empty-inline">No interviewer availability added yet.</p> : interviewerAvailability.map((item) => (
+              {orderedInterviewerAvailability.length === 0 ? <p className="empty-inline">No interviewer availability added yet.</p> : orderedInterviewerAvailability.map((item) => (
                 <div className="settings-row" key={`${item.interviewer}-${item.date}-${item.time}-${item.duration}`}>
                   <span><strong>{item.interviewer}</strong> · {formatDateLabel(item.date)} at {formatTimeLabel(item.time)}</span>
                   <span>{item.duration || 30} min</span>

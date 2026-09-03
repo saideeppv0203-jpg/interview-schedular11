@@ -793,6 +793,11 @@ app.post('/api/interviewer-availability/toggle', requireAdmin, (req, res) => {
   res.json({ available: true });
 });
 
+// Keep unknown API requests JSON instead of allowing the frontend fallback to return HTML.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found.' });
+});
+
 // Serve the built React app in production (after `npm run build`)
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {

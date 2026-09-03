@@ -470,6 +470,13 @@ input {
   border-radius: 6px;
   overflow: hidden;
 }
+.daily-count-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
 .daily-count-row {
   width: 100%;
   border: none;
@@ -502,6 +509,11 @@ input {
 .daily-count-total .serif {
   color: var(--ink);
   font-size: 1.35rem;
+}
+@media (max-width: 620px) {
+  .daily-count-heading {
+    flex-direction: column;
+  }
 }
 .daily-student-counts {
   display: flex;
