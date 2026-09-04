@@ -71,6 +71,10 @@ function isPastSlot(dateStr, timeStr) {
   return new Date(`${dateStr}T${timeStr}:00`).getTime() <= Date.now();
 }
 
+function isCompletedBooking(booking) {
+  return isPastSlot(booking.date, booking.time) && ['approved', 'completed'].includes(booking.status);
+}
+
 function statusLabel(status) {
   return status === 'approved' ? 'Approved' : status === 'completed' ? 'Completed' : status === 'rejected' ? 'Rejected' : status === 'cancelled' ? 'Cancelled' : 'Pending';
 }
@@ -655,6 +659,19 @@ export default function App() {
     setLoading(false);
   }
 
+  async function deleteCabin(cabin) {
+    if (!window.confirm(`Delete ${cabin}? This cannot be undone.`)) return;
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiDelete(`/cabins/${encodeURIComponent(cabin)}`, adminToken);
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
+    }
+    setLoading(false);
+  }
+
   async function addStudent(e) {
     e.preventDefault();
     setLoading(true);
@@ -779,7 +796,7 @@ export default function App() {
       .sort(compareScheduleTime);
     const historyBookings = myBookings.filter((b) => (
       (!historyStatus || historyStatus === 'all' ||
-        (historyStatus === 'completed' ? isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' : b.status === historyStatus)) &&
+        (historyStatus === 'completed' ? isCompletedBooking(b) : b.status === historyStatus)) &&
       (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
     ));
     const upcomingBookings = historyBookings.filter((b) => !isPastSlot(b.date, b.time));
@@ -1038,10 +1055,10 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Badge text={isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'Completed' : statusLabel(b.status)} kind={isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'completed' : b.status} />
+                  <Badge text={isCompletedBooking(b) ? 'Completed' : statusLabel(b.status)} kind={isCompletedBooking(b) ? 'completed' : b.status} />
                   <button className="btn btn-small btn-outline" onClick={() => copyBookingDetails(b)}>Copy details</button>
                   </div>
-                  {isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? (
+                  {isCompletedBooking(b) ? (
                     <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteCompletedBooking(b)} disabled={loading}>Delete</button>
                   ) : b.status !== 'cancelled' && !isPastSlot(b.date, b.time) && (
                     <>
@@ -1050,7 +1067,7 @@ export default function App() {
                     </>
                   )}
                 </div>
-                <div className="status-help">{isPastSlot(b.date, b.time) && b.status !== 'cancelled' && b.status !== 'rejected' ? 'Completed: this interview has already taken place.' : b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
+                <div className="status-help">{isCompletedBooking(b) ? 'Completed: this interview has already taken place.' : b.status === 'pending' ? 'Pending: the admin is reviewing your request.' : b.status === 'approved' ? 'Approved: your slot is confirmed.' : b.status === 'rejected' ? <>Rejected: no slot was approved. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> for help.</> : 'Cancelled: this slot is no longer reserved.'}</div>
               </div>
             ))}
               </div>
@@ -1670,7 +1687,7 @@ export default function App() {
                     >
                       {s.active === false ? 'Enable' : 'Disable'}
                     </button>
-                    <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteStudent(s)}>
+                    <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} onClick={() => deleteStudent(s)} disabled={loading} type="button">
                       Delete
                     </button>
                   </div>
@@ -1711,9 +1728,13 @@ export default function App() {
               {CABINS.map((cabin) => {
                 const enabled = !disabledCabins.includes(cabin);
                 const activeCount = activeCabinCounts[cabin] || 0;
+                const removable = !DEFAULT_CABINS.includes(cabin);
                 return <div key={cabin} className="card cabin-row">
                   <span><strong>{cabin}</strong><small>{enabled ? 'Enabled for booking' : 'Disabled for all new bookings'}</small>{enabled && activeCount > 0 && <small className="warning-text">Has {activeCount} active interview{activeCount === 1 ? '' : 's'} — reschedule or cancel first.</small>}</span>
-                  <button className="btn btn-small btn-outline" disabled={enabled && activeCount > 0} onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-small btn-outline" disabled={loading || (enabled && activeCount > 0)} onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button>
+                    {removable && <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} disabled={loading || activeCount > 0} onClick={() => deleteCabin(cabin)}>Delete cabin</button>}
+                  </div>
                 </div>;
               })}
             </div>

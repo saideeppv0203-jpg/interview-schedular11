@@ -39,6 +39,7 @@ const DAY_START_MIN = 8 * 60;
 const DAY_END_MIN = 22 * 60;
 const VALID_DURATIONS = [30, 60];
 const DEFAULT_CABINS = ['Cabin 1', 'Cabin 2'];
+const COMPLETED_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function getDefaultData() {
   return { students: {}, bookings: [], blockedSlots: [], disabledCabins: [], cabins: DEFAULT_CABINS, activityHistory: [], interviewerAvailability: [] };
@@ -319,6 +320,19 @@ function persistData() {
   });
 }
 
+function removeExpiredCompletedBookings() {
+  const cutoff = Date.now() - COMPLETED_RETENTION_MS;
+  const retainedBookings = db.bookings.filter((booking) => {
+    if (!['approved', 'completed'].includes(booking.status)) return true;
+    const endTime = new Date(`${booking.date}T${booking.time}:00`).getTime() + (booking.duration || 30) * 60 * 1000;
+    return !Number.isNaN(endTime) && endTime > cutoff;
+  });
+  if (retainedBookings.length === db.bookings.length) return false;
+  db.bookings = retainedBookings;
+  persistData();
+  return true;
+}
+
 function recordActivity(action, booking, details) {
   if (!db.activityHistory) db.activityHistory = [];
   db.activityHistory.unshift({
@@ -378,6 +392,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Full app state: student directory + all bookings + admin-blocked slots
 app.get('/api/state', (req, res) => {
+  removeExpiredCompletedBookings();
   res.json({ students: db.students, bookings: db.bookings, blockedSlots: db.blockedSlots, disabledCabins: db.disabledCabins || [], cabins: db.cabins || DEFAULT_CABINS, activityHistory: db.activityHistory || [], interviewerAvailability: db.interviewerAvailability || [] });
 });
 
@@ -741,6 +756,43 @@ app.post('/api/cabins', requireAdmin, (req, res) => {
   res.json({ cabins: db.cabins });
 });
 
+app.delete('/api/cabins/:cabin', requireAdmin, async (req, res) => {
+  const cabin = req.params.cabin;
+  const cabins = db.cabins || DEFAULT_CABINS;
+  if (!cabins.includes(cabin)) return res.status(404).json({ error: 'Cabin not found.' });
+  if (DEFAULT_CABINS.includes(cabin)) {
+    return res.status(400).json({ error: 'Default cabins cannot be deleted.' });
+  }
+
+  const activeInterview = db.bookings.find((booking) => (
+    booking.cabin === cabin &&
+    booking.status !== 'rejected' &&
+    booking.status !== 'cancelled' &&
+    booking.date >= new Date().toISOString().slice(0, 10)
+  ));
+  if (activeInterview) {
+    return res.status(409).json({ error: `${cabin} has active interviews. Reschedule or cancel them before deleting the cabin.` });
+  }
+
+  const previousCabins = db.cabins;
+  const previousDisabledCabins = db.disabledCabins;
+  const previousBlockedSlots = db.blockedSlots;
+  db.cabins = cabins.filter((item) => item !== cabin);
+  db.disabledCabins = (db.disabledCabins || []).filter((item) => item !== cabin);
+  db.blockedSlots = (db.blockedSlots || []).filter((slot) => slot.cabin !== cabin);
+
+  try {
+    await saveData(db);
+    res.json({ deleted: true, cabins: db.cabins });
+  } catch (error) {
+    db.cabins = previousCabins;
+    db.disabledCabins = previousDisabledCabins;
+    db.blockedSlots = previousBlockedSlots;
+    console.error('Failed to delete cabin:', error);
+    res.status(500).json({ error: 'Cabin could not be deleted. Please try again.' });
+  }
+});
+
 // Delete a booking (admin only)
 app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
   const index = db.bookings.findIndex((booking) => booking.id === req.params.id);
@@ -753,16 +805,22 @@ app.delete('/api/bookings/:id', requireAdmin, (req, res) => {
 });
 
 // Delete a student and their bookings (admin only)
-app.delete('/api/students/:phone', requireAdmin, (req, res) => {
+app.delete('/api/students/:phone', requireAdmin, async (req, res) => {
   const phone = req.params.phone;
-  if (!db.students[phone]) return res.status(404).json({ error: 'Student not found.' });
+  const student = db.students[phone];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
   const deletedBookings = db.bookings.filter((booking) => booking.phone === phone);
   delete db.students[phone];
   db.bookings = db.bookings.filter((booking) => booking.phone !== phone);
   deletedBookings.forEach((booking) => recordActivity('deleted', booking, 'Admin deleted the student and booking.'));
   if (deletedBookings.length === 0) recordActivity('deleted', { studentName: student.name, phone }, 'Admin deleted the student account.');
-  persistData();
-  res.json({ deleted: true });
+  try {
+    await saveData(db);
+    res.json({ deleted: true });
+  } catch (error) {
+    console.error('Failed to delete student:', error);
+    res.status(500).json({ error: 'Student could not be deleted. Please try again.' });
+  }
 });
 
 // Toggle whether a specific cabin/date/time slot is blocked off (admin only)
@@ -827,6 +885,8 @@ if (fs.existsSync(clientDist)) {
 const PORT = process.env.PORT || 4000;
 initializeDatabase()
   .then(() => {
+    removeExpiredCompletedBookings();
+    setInterval(removeExpiredCompletedBookings, 15 * 60 * 1000);
     app.listen(PORT, () => {
       console.log(`Interview scheduler server running on port ${PORT}`);
     });
