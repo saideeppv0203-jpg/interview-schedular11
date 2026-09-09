@@ -1,8 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const { Pool } = require('pg');
 
@@ -363,11 +363,11 @@ function requireAdmin(req, res, next) {
   if (!token || token !== ADMIN_TOKEN) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  function normalizePhone(phone) {
-    return String(phone || '').replace(/[^\d+]/g, '');
-  }
   next();
+}
+
+function normalizePhone(phone) {
+  return String(phone || '').replace(/[^\d+]/g, '');
 }
 
 function toMinutes(hhmm) {

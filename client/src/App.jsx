@@ -80,7 +80,12 @@ function statusLabel(status) {
 }
 
 // ---- API helpers ----
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const localDevApiBaseUrl = typeof window !== 'undefined' &&
+  ['5173', '4173'].includes(window.location.port)
+  ? 'http://localhost:4000'
+  : '';
+const API_BASE_URL = configuredApiBaseUrl || localDevApiBaseUrl;
 
 async function readApiResponse(res) {
   const contentType = res.headers.get('content-type') || '';

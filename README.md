@@ -58,7 +58,8 @@ the example values.
 If you host the Vite client separately from the Express API, set
 `VITE_API_BASE_URL` in `client/.env` to the backend origin (without a trailing
 slash), then rebuild the client. Leave it empty when Express serves
-`client/dist`, or when using the local Vite proxy.
+`client/dist`; during local Vite development or preview, the client
+automatically uses `http://localhost:4000` when this variable is not set.
 
 ## Building for production
 
