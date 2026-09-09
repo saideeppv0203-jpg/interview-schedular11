@@ -240,8 +240,10 @@ export default function App() {
   const [adminFilter, setAdminFilter] = useState('all');
   const [adminDateFilter, setAdminDateFilter] = useState(null);
   const [adminCalendarMonth, setAdminCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [adminCalendarCabinFilter, setAdminCalendarCabinFilter] = useState('all');
+  const [adminCalendarInterviewerFilter, setAdminCalendarInterviewerFilter] = useState('all');
   const [showEmptyDays, setShowEmptyDays] = useState(false);
-  const [adminTab, setAdminTab] = useState('requests'); // requests, students, slots
+  const [adminTab, setAdminTab] = useState(() => localStorage.getItem('scheduler_admin_tab') || 'requests'); // requests, students, slots
   const [adminSlotDate, setAdminSlotDate] = useState(todayStr());
   const [adminSlotDuration, setAdminSlotDuration] = useState(30);
   const [adminActionError, setAdminActionError] = useState('');
@@ -267,6 +269,10 @@ export default function App() {
   const [rescheduleDuration, setRescheduleDuration] = useState(30);
   const PAGE_SIZE = 8;
   const CABINS = cabins;
+
+  useEffect(() => {
+    localStorage.setItem('scheduler_admin_tab', adminTab);
+  }, [adminTab]);
 
   const refresh = useCallback(async () => {
     setStateLoading(true);
@@ -1285,10 +1291,12 @@ export default function App() {
   // ---------- ADMIN DASHBOARD ----------
   if (view === 'admin' && adminToken) {
     const todayBookings = bookings.filter((b) => b.date === todayStr());
-    const total = todayBookings.length;
+    const totalStudents = Object.keys(students).length;
+    const pendingRequests = bookings.filter((b) => b.status === 'pending').length;
+    const approvedInterviews = bookings.filter((b) => b.status === 'approved').length;
+    const todaysInterviews = todayBookings.filter((b) => !['rejected', 'cancelled'].includes(b.status)).length;
     const pendingCount = todayBookings.filter((b) => b.status === 'pending').length;
     const approvedCount = todayBookings.filter((b) => b.status === 'approved').length;
-    const availableToday = slotsForDuration(30).reduce((count, time) => count + CABINS.filter((cabin) => isSlotFree(cabin, todayStr(), time, 30).free).length, 0);
 
     const filtered = bookings
       .filter((b) => {
@@ -1342,9 +1350,14 @@ export default function App() {
     const visibleDailyInterviewCounts = dailyInterviewCounts.filter((day) => (
       showEmptyDays || day.total > 0 || adminDateFilter === day.date
     ));
+    const calendarMatches = (booking) => (
+      (adminCalendarCabinFilter === 'all' || booking.cabin === adminCalendarCabinFilter) &&
+      (adminCalendarInterviewerFilter === 'all' || (booking.interviewer || 'Unassigned') === adminCalendarInterviewerFilter)
+    );
+    const calendarInterviewers = Array.from(new Set(bookings.map((booking) => booking.interviewer || 'Unassigned'))).sort();
     const selectedDateStudentCounts = adminDateFilter
       ? Object.values(bookings
-        .filter((booking) => booking.date === adminDateFilter)
+        .filter((booking) => booking.date === adminDateFilter && calendarMatches(booking))
         .reduce((counts, booking) => {
           const key = booking.phone || booking.studentName;
           if (!counts[key]) counts[key] = { name: booking.studentName || 'Unknown student', count: 0 };
@@ -1354,6 +1367,7 @@ export default function App() {
         .sort((a, b) => a.name.localeCompare(b.name))
       : [];
     const calendarDateCounts = bookings.reduce((counts, booking) => {
+      if (!calendarMatches(booking)) return counts;
       if (!counts[booking.date]) counts[booking.date] = { total: 0, statuses: {} };
       counts[booking.date].total += 1;
       counts[booking.date].statuses[booking.status] = (counts[booking.date].statuses[booking.status] || 0) + 1;
@@ -1361,7 +1375,7 @@ export default function App() {
     }, {});
     const calendarDates = calendarDays(adminCalendarMonth);
     const selectedCalendarBookings = adminDateFilter
-      ? bookings.filter((booking) => booking.date === adminDateFilter).sort(compareScheduleTime)
+      ? bookings.filter((booking) => booking.date === adminDateFilter && calendarMatches(booking)).sort(compareScheduleTime)
       : [];
     const orderedInterviewerAvailability = [...interviewerAvailability].sort((a, b) => (
       compareScheduleTime(a, b) || String(a.interviewer || '').localeCompare(String(b.interviewer || ''))
@@ -1424,10 +1438,10 @@ export default function App() {
 
         <div className="stat-grid admin-summary">
           {[
-            ["Today's total", total, 'var(--ink)'],
-            ["Today's approved", approvedCount, 'var(--approved)'],
-            ["Today's pending", pendingCount, 'var(--pending)'],
-            ['Available slots', availableToday, 'var(--accent)'],
+            ['Total students', totalStudents, 'var(--ink)'],
+            ['Pending requests', pendingRequests, 'var(--pending)'],
+            ['Approved interviews', approvedInterviews, 'var(--approved)'],
+            ["Today's interviews", todaysInterviews, 'var(--accent)'],
           ].map(([label, val, color]) => (
             <div key={label} className="stat-box">
               <div className="serif stat-value" style={{ color }}>{val}</div>
@@ -1541,6 +1555,16 @@ export default function App() {
                 →
               </button>
             </div>
+          </div>
+          <div className="filter-row" style={{ marginBottom: 16 }}>
+            <select className="search-input" value={adminCalendarCabinFilter} onChange={(e) => setAdminCalendarCabinFilter(e.target.value)} aria-label="Filter calendar by cabin">
+              <option value="all">All cabins</option>
+              {CABINS.map((cabin) => <option key={cabin} value={cabin}>{cabin}</option>)}
+            </select>
+            <select className="search-input" value={adminCalendarInterviewerFilter} onChange={(e) => setAdminCalendarInterviewerFilter(e.target.value)} aria-label="Filter calendar by interviewer">
+              <option value="all">All interviewers</option>
+              {calendarInterviewers.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
           </div>
           <div className="calendar-grid calendar-weekdays">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
