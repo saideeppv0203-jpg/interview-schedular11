@@ -1028,8 +1028,8 @@ export default function App() {
           </div>
         </div>
         <div className="student-booking-panel">
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
-          <div className="field" style={{ maxWidth: 220 }}>
+        <div className="student-booking-controls" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div className="field student-date-field" style={{ maxWidth: 220 }}>
             <label>Pick a date</label>
             <input
               type="date"

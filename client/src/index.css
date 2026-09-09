@@ -921,6 +921,14 @@ input {
   background: var(--panel);
   box-shadow: 0 10px 24px rgba(30, 36, 48, 0.06);
 }
+.student-date-field input,
+.student-booking-controls select {
+  min-height: 44px;
+}
+.booking-card {
+  gap: 10px;
+  padding: 12px 14px;
+}
 .schedule-view-toggle {
   display: flex;
   gap: 4px;
@@ -1049,10 +1057,26 @@ input {
   .schedule-view-toggle { width: 100%; }
   .schedule-view-toggle .admin-tab { flex: 1; min-height: 42px; }
   .student-booking-panel { padding: 14px; }
+  .student-booking-controls {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    margin: -14px -14px 12px !important;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .student-date-field input,
+  .student-booking-controls select {
+    min-height: 48px;
+    font-size: 1rem;
+  }
   .student-booking-panel > div:first-child { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px !important; }
   .student-booking-panel > div:first-child .field { max-width: none !important; }
   .slot-table { margin-right: -2px; overflow-x: auto; padding-bottom: 4px; }
   .slot-table .table-header, .slot-table .table-row { min-width: 520px; }
+  .slot-table .btn { min-height: 44px; min-width: 92px; }
+  .slot-table .table-cell { padding: 9px 7px; }
   .calendar-interview-details > div { align-items: flex-start; flex-direction: column; gap: 3px; }
   .search-row { flex-direction: column; }
   .search-row .search-input { width: 100% !important; }
@@ -1085,7 +1109,7 @@ input {
   .calendar-heading { align-items: flex-start; flex-direction: column; }
   .calendar-navigation { width: 100%; justify-content: space-between; }
   .calendar-day { min-height: 46px; padding: 5px 3px; }
-  .booking-card { align-items: flex-start !important; flex-direction: column; }
+  .booking-card { align-items: flex-start !important; flex-direction: column; padding: 10px 12px; }
   .booking-card > div:last-child { width: 100%; justify-content: flex-start !important; }
   .modal { padding: 18px; }
   .student-overview-grid { grid-template-columns: 1fr; }
