@@ -154,6 +154,20 @@ function Badge({ text, kind }) {
   );
 }
 
+function BrandMark() {
+  return <span className="brand-mark" aria-hidden="true"><span>✓</span></span>;
+}
+
+function LoadingSkeletons() {
+  return (
+    <div className="skeleton-grid" aria-label="Loading schedule" role="status">
+      <div className="skeleton-card"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></div>
+      <div className="skeleton-card"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></div>
+      <div className="skeleton-card large"><span className="skeleton-line wide" /><span className="skeleton-block" /><span className="skeleton-block" /></div>
+    </div>
+  );
+}
+
 function AppFooter() {
   return (
     <footer className="app-footer">
@@ -215,6 +229,7 @@ export default function App() {
 
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminError, setAdminError] = useState('');
   const [adminToken, setAdminToken] = useState(null);
   const [adminFilter, setAdminFilter] = useState('all');
@@ -229,10 +244,13 @@ export default function App() {
   const [adminCabinFilter, setAdminCabinFilter] = useState('all');
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatus, setHistoryStatus] = useState('all');
+  const [historyPage, setHistoryPage] = useState(1);
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   const [adminRequestPage, setAdminRequestPage] = useState(1);
   const [adminStudentPage, setAdminStudentPage] = useState(1);
   const [selectedBookingIds, setSelectedBookingIds] = useState([]);
+  const [editingCompanyBookingId, setEditingCompanyBookingId] = useState(null);
+  const [editingCompanyName, setEditingCompanyName] = useState('');
   const [availabilityInterviewer, setAvailabilityInterviewer] = useState('');
   const [availabilityDate, setAvailabilityDate] = useState(todayStr());
   const [availabilityTime, setAvailabilityTime] = useState('09:00');
@@ -438,6 +456,7 @@ export default function App() {
         rangesOverlap(item.time, item.duration || 30, booking.time, booking.duration || 30));
       if (duplicate && !window.confirm(`Warning: ${booking.studentName} already has ${duplicate.company} at ${formatDateLabel(duplicate.date)} ${formatTimeLabel(duplicate.time)}. Approve this overlapping booking anyway?`)) return;
     }
+
     if (!window.confirm(`${status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : status === 'cancelled' ? 'Cancel' : 'Set pending'} this interview request?`)) return;
     setLoading(true);
     try {
@@ -445,6 +464,32 @@ export default function App() {
       await refresh();
     } catch (err) {
       alert(err.message);
+    }
+    setLoading(false);
+  }
+
+  function startCompanyEdit(booking) {
+    setEditingCompanyBookingId(booking.id);
+    setEditingCompanyName(booking.company || '');
+    setAdminActionError('');
+  }
+
+  async function saveCompanyName(e, booking) {
+    e.preventDefault();
+    const nextCompany = editingCompanyName.trim();
+    if (!nextCompany) {
+      setAdminActionError('Company name is required.');
+      return;
+    }
+    setLoading(true);
+    setAdminActionError('');
+    try {
+      await apiPatch(`/bookings/${encodeURIComponent(booking.id)}`, { company: nextCompany }, adminToken);
+      setEditingCompanyBookingId(null);
+      setEditingCompanyName('');
+      await refresh();
+    } catch (err) {
+      setAdminActionError(err.message);
     }
     setLoading(false);
   }
@@ -685,7 +730,7 @@ export default function App() {
   }
 
   async function copyBookingDetails(booking) {
-    const details = `${booking.company} · ${booking.round}\n${formatDateLabel(booking.date)} at ${formatTimeLabel(booking.time)}\n${booking.cabin} · ${booking.duration || 30} minutes\nInterviewer: ${booking.interviewer || 'Not assigned'}\nStatus: ${statusLabel(booking.status)}`;
+    const details = `${booking.company} · ${booking.round}\n${formatDateLabel(booking.date)} at ${formatTimeLabel(booking.time)}\n${booking.cabin} · ${booking.duration || 30} minutes\nSupporter: ${booking.interviewer || 'Not assigned'}\nStatus: ${statusLabel(booking.status)}`;
     try {
       await navigator.clipboard.writeText(details);
       setBookingSuccess({ message: 'Booking details copied to your clipboard.' });
@@ -731,7 +776,7 @@ export default function App() {
         <section className="landing-hero">
           <div className="landing-copy">
             <p className="landing-eyebrow">PLACEMENT OPERATIONS PLATFORM</p>
-            <h1 className="serif">Welcome to <span>Placement Assist</span></h1>
+            <h1 className="serif"><BrandMark /> Welcome to <span>Placement Assist</span></h1>
             <p className="landing-description">A simple, organized way to book, manage, and track interview schedules in real time.</p>
             <div className="landing-actions">
               <button className="btn btn-primary" onClick={() => setView('student-auth')}>Student login</button>
@@ -799,6 +844,8 @@ export default function App() {
         (historyStatus === 'completed' ? isCompletedBooking(b) : b.status === historyStatus)) &&
       (!historySearch.trim() || [b.company, b.round].some((value) => String(value || '').toLowerCase().includes(historySearch.trim().toLowerCase())))
     ));
+    const HISTORY_PAGE_SIZE = 6;
+    const pagedHistoryBookings = historyBookings.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
     const upcomingBookings = historyBookings.filter((b) => !isPastSlot(b.date, b.time));
     const pastBookings = historyBookings.filter((b) => isPastSlot(b.date, b.time));
 
@@ -834,6 +881,14 @@ export default function App() {
     });
     const rescheduleTimes = slotsForDuration(rescheduleDuration).filter((time) => !isPastSlot(rescheduleDate, time));
     const reschedulePast = isPastSlot(rescheduleDate, rescheduleTime);
+    const studentStatusCounts = ['pending', 'approved', 'completed', 'rejected', 'cancelled'].map((status) => ({
+      status,
+      count: status === 'completed'
+        ? myBookings.filter((booking) => isCompletedBooking(booking)).length
+        : myBookings.filter((booking) => booking.status === status && !isCompletedBooking(booking)).length,
+    }));
+    const studentBookingTotal = Math.max(myBookings.length, 1);
+    const upcomingPreview = myBookings.filter((booking) => !isPastSlot(booking.date, booking.time) && !['rejected', 'cancelled'].includes(booking.status)).slice(0, 3);
 
     return (
       <div className="container">
@@ -859,19 +914,42 @@ export default function App() {
             {stateLoading ? 'Refreshing…' : 'Refresh schedule'}
           </button>
         </div>
+        {stateLoading && !lastRefreshed && <LoadingSkeletons />}
         {bookingSuccess && (
           <div className="card success-banner" role="status">
             {bookingSuccess.message ? <span style={{ whiteSpace: 'pre-wrap' }}>{bookingSuccess.message}</span> : (
               <div>
                 <strong>Booking request sent — confirmation details</strong>
                 <div style={{ marginTop: 6, fontSize: '0.85rem' }}>{bookingSuccess.company} · {bookingSuccess.round} · {formatDateLabel(bookingSuccess.date)} · {formatTimeLabel(bookingSuccess.time)} · {bookingSuccess.cabin} · {bookingSuccess.duration} min</div>
-                <div style={{ marginTop: 4, fontSize: '0.8rem' }}>Interviewer: {bookingSuccess.interviewer || 'Not assigned'} · Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
+                <div style={{ marginTop: 4, fontSize: '0.8rem' }}>Supporter: {bookingSuccess.interviewer || 'Not assigned'} · Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
                 <div style={{ marginTop: 4, fontSize: '0.8rem' }}>Status: Pending approval</div>
               </div>
             )}
             <button className="link-btn" onClick={() => setBookingSuccess(null)} aria-label="Dismiss booking success message">Dismiss</button>
           </div>
         )}
+
+        <section className="student-overview-grid" aria-label="Your interview overview">
+          <div className="card student-overview-card">
+            <p className="admin-kicker">YOUR PROGRESS</p>
+            <div className="student-overview-total"><strong>{myBookings.length}</strong><span>total interview{myBookings.length === 1 ? '' : 's'}</span></div>
+            <div className="student-status-bars">
+              {studentStatusCounts.map(({ status, count }) => <div key={status} className="student-status-row"><span><i className={`legend-dot status-${status}`} />{statusLabel(status)}</span><div className="chart-track"><div className={`chart-fill status-${status}`} style={{ width: `${(count / studentBookingTotal) * 100}%` }} /></div><strong>{count}</strong></div>)}
+            </div>
+          </div>
+          <div className="card student-overview-card">
+            <p className="admin-kicker">UPCOMING SCHEDULE</p>
+            <div className="student-preview-list">
+              {upcomingPreview.length ? upcomingPreview.map((booking) => <div className="student-preview-item" key={booking.id}><time>{formatDateLabel(booking.date)} · {formatTimeLabel(booking.time)}</time><span><strong>{booking.company}</strong> · {booking.cabin}</span><Badge text={statusLabel(booking.status)} kind={booking.status} /></div>) : <p className="empty-inline">No upcoming interviews yet.</p>}
+            </div>
+          </div>
+          <div className="card student-overview-card student-availability-card">
+            <p className="admin-kicker">SELECTED DATE</p>
+            <strong>{formatDateLabel(selectedDate)}</strong>
+            <p className="overview-muted">{availableSlotCount} available slot{availableSlotCount === 1 ? '' : 's'} for {duration} minutes</p>
+            {CABINS.map((cabin) => <div className="student-cabin-bar" key={cabin}><span>{cabin}</span><div className="chart-track"><div className="chart-fill" style={{ width: `${times.length ? (availableByCabin[cabin] / times.length) * 100 : 0}%` }} /></div><strong>{availableByCabin[cabin]}</strong></div>)}
+          </div>
+        </section>
 
         <div className="card student-upcoming" style={{ marginBottom: 16 }}>
           <strong>Upcoming interview</strong>
@@ -907,7 +985,7 @@ export default function App() {
               }}>
                 <span>{Number(date.slice(-2))}</span>
                 {studentCalendarCounts[date] ? (
-                  <span className="calendar-statuses" aria-label={`${studentCalendarCounts[date].total} interviews`}>
+                  <span className="calendar-statuses" aria-label={`${studentCalendarCounts[date].total} interviews`}><b>{studentCalendarCounts[date].total}</b>
                     {Object.entries(studentCalendarCounts[date].statuses).map(([status, count]) => <i key={status} className={`calendar-status status-${status}`} title={`${count} ${status}`} />)}
                   </span>
                 ) : <span />}
@@ -922,7 +1000,7 @@ export default function App() {
                 <div><strong>{formatTimeLabel(booking.time)} · {booking.company}</strong><span>{statusLabel(booking.status)}</span></div>
                 <div><span>Round</span><strong>{booking.round}</strong></div>
                 <div><span>Cabin · Duration</span><strong>{booking.cabin} · {booking.duration || 30} min</strong></div>
-                <div><span>Interviewer</span><strong>{booking.interviewer || 'Not assigned'}</strong></div>
+                <div><span>Supporter</span><strong>{booking.interviewer || 'Not assigned'}</strong></div>
                 <div><span>Timezone</span><strong>{booking.timezone || 'local'}</strong></div>
               </div>
             ))}
@@ -1026,8 +1104,8 @@ export default function App() {
 
         <h3 className="serif" style={{ fontSize: '1.1rem', marginBottom: 12 }}>Your interview history</h3>
         <div className="search-row" style={{ display: 'flex', gap: 8 }}>
-          <input className="search-input" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Search company or round…" aria-label="Search interview history" />
-          <select className="search-input" style={{ width: 150 }} value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)}>
+          <input className="search-input" value={historySearch} onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }} placeholder="Search company or round…" aria-label="Search interview history" />
+          <select className="search-input" style={{ width: 150 }} value={historyStatus} onChange={(e) => { setHistoryStatus(e.target.value); setHistoryPage(1); }}>
             <option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="completed">Completed</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option>
           </select>
         </div>
@@ -1040,7 +1118,9 @@ export default function App() {
             {[
               ['Upcoming', upcomingBookings],
               ['Past interviews', pastBookings],
-            ].map(([groupLabel, groupBookings]) => groupBookings.length > 0 && <section key={groupLabel}>
+            ].map(([groupLabel]) => {
+              const groupBookings = pagedHistoryBookings.filter((booking) => groupLabel === 'Upcoming' ? upcomingBookings.includes(booking) : pastBookings.includes(booking));
+              return groupBookings.length > 0 && <section key={groupLabel}>
               <h4>{groupLabel}</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {groupBookings.map((b) => (
@@ -1050,7 +1130,7 @@ export default function App() {
                   <div style={{ color: 'var(--ink-soft)' }}>
                 {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min · {b.timezone || 'local'}
                   </div>
-                  <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>Interviewer: {b.interviewer || 'Not assigned'}</div>
+                  <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>Supporter: {b.interviewer || 'Not assigned'}</div>
                   {b.status === 'cancelled' && b.cancelReason && <div className="cancel-reason">Cancellation reason: {b.cancelReason}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1071,7 +1151,9 @@ export default function App() {
               </div>
             ))}
               </div>
-            </section>)}
+            </section>;
+            })}
+            {historyBookings.length > HISTORY_PAGE_SIZE && <div className="pagination"><button className="btn btn-small btn-outline" disabled={historyPage === 1} onClick={() => setHistoryPage((page) => page - 1)}>Previous</button><span>Page {historyPage} of {Math.ceil(historyBookings.length / HISTORY_PAGE_SIZE)}</span><button className="btn btn-small btn-outline" disabled={historyPage >= Math.ceil(historyBookings.length / HISTORY_PAGE_SIZE)} onClick={() => setHistoryPage((page) => page + 1)}>Next</button></div>}
           </div>
         )}
 
@@ -1147,7 +1229,7 @@ export default function App() {
                   <input value={round} onChange={(e) => setRound(e.target.value)} placeholder="e.g. Technical round 1" />
                 </div>
                 <div className="field">
-                  <label>Interviewer (optional)</label>
+                  <label>Supporter (optional)</label>
                   <input value={interviewer} onChange={(e) => setInterviewer(e.target.value)} placeholder="e.g. Priya Sharma" />
                 </div>
                 {modalError && <p className="error-text" style={{ marginBottom: 12 }}>{modalError}</p>}
@@ -1183,7 +1265,7 @@ export default function App() {
           </div>
           <div className="field">
             <label>Password</label>
-            <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+            <div className="password-field"><input type={showAdminPassword ? 'text' : 'password'} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowAdminPassword((visible) => !visible)} aria-label={showAdminPassword ? 'Hide password' : 'Show password'}>{showAdminPassword ? 'Hide' : 'Show'}</button></div>
           </div>
           {adminError && <p className="error-text" style={{ marginBottom: 12 }}>{adminError}</p>}
           <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -1287,12 +1369,38 @@ export default function App() {
       .filter((booking) => booking.status === 'pending' || (booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date === todayStr()))
       .sort(compareScheduleTime)
       .slice(0, 4);
+    const statusCounts = ['pending', 'approved', 'rejected', 'cancelled'].map((status) => ({
+      status,
+      count: bookings.filter((booking) => booking.status === status).length,
+    }));
+    const statusTotal = Math.max(bookings.length, 1);
+    const domainCounts = Object.entries(bookings.reduce((counts, booking) => {
+      const domain = booking.domain || 'Unspecified';
+      counts[domain] = (counts[domain] || 0) + 1;
+      return counts;
+    }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const maxDomainCount = Math.max(...domainCounts.map(([, count]) => count), 1);
+    const maxDailyCount = Math.max(...dailyInterviewCounts.map((day) => day.total), 1);
+    const todayTimeline = todayBookings
+      .filter((booking) => booking.status !== 'rejected' && booking.status !== 'cancelled')
+      .sort(compareScheduleTime);
+    const conflictBookings = bookings.filter((booking, index, allBookings) => (
+      booking.status !== 'rejected' && booking.status !== 'cancelled' &&
+      allBookings.some((other, otherIndex) => (
+        otherIndex !== index &&
+        other.status !== 'rejected' && other.status !== 'cancelled' &&
+        other.cabin === booking.cabin &&
+        other.date === booking.date &&
+        rangesOverlap(other.time, other.duration || 30, booking.time, booking.duration || 30)
+      ))
+    ));
+    const heatmapTimes = slotsForDuration(60);
 
     return (
       <div className="container admin-container">
         <div className="admin-header">
           <div>
-            <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}>Welcome back, Admin</h2>
+            <h2 className="serif" style={{ fontSize: '1.5rem', marginBottom: 4 }}><BrandMark /> Welcome back, Admin</h2>
             <p className="admin-kicker">OPERATIONS OVERVIEW</p>
             <p className="loading-text">Updated {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
           </div>
@@ -1354,6 +1462,53 @@ export default function App() {
           ))}
         </section>
 
+        <section className="analytics-grid" aria-label="Schedule analytics">
+          <div className="card admin-section analytics-card">
+            <div className="section-heading"><div><p className="admin-kicker">OVERVIEW</p><h3 className="serif">Request status</h3></div><strong>{bookings.length}</strong></div>
+            <div className="status-chart">
+              {statusCounts.map(({ status, count }) => (
+                <div key={status} className="status-chart-row">
+                  <span><i className={`legend-dot status-${status}`} />{statusLabel(status)}</span>
+                  <div className="chart-track"><div className={`chart-fill status-${status}`} style={{ width: `${(count / statusTotal) * 100}%` }} /></div>
+                  <strong>{count}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="card admin-section analytics-card">
+            <div className="section-heading"><div><p className="admin-kicker">DISTRIBUTION</p><h3 className="serif">Bookings by domain</h3></div></div>
+            <div className="domain-chart">
+              {domainCounts.length ? domainCounts.map(([domain, count]) => (
+                <div key={domain} className="domain-row"><span title={domain}>{domain}</span><div className="chart-track"><div className="chart-fill domain-fill" style={{ width: `${(count / maxDomainCount) * 100}%` }} /></div><strong>{count}</strong></div>
+              )) : <p className="empty-inline">No domain data yet.</p>}
+            </div>
+          </div>
+          <div className="card admin-section analytics-card trend-card">
+            <div className="section-heading"><div><p className="admin-kicker">NEXT {DAYS_AHEAD} DAYS</p><h3 className="serif">Booking trend</h3></div></div>
+            <div className="trend-chart">
+              {dailyInterviewCounts.map((day) => <button key={day.date} className="trend-bar-wrap" title={`${formatDateLabel(day.date)}: ${day.total} interviews`} onClick={() => { setAdminDateFilter(day.date); setAdminFilter('all'); setAdminTab('requests'); }}><span className="trend-value">{day.total || ''}</span><span className="trend-bar" style={{ height: `${Math.max((day.total / maxDailyCount) * 100, day.total ? 12 : 3)}%` }} /><small>{day.date.slice(8)}</small></button>)}
+            </div>
+          </div>
+          <div className="card admin-section analytics-card">
+            <div className="section-heading"><div><p className="admin-kicker">TODAY</p><h3 className="serif">Interview timeline</h3></div><strong>{todayTimeline.length}</strong></div>
+            <div className="timeline-list">
+              {todayTimeline.length ? todayTimeline.map((booking) => <div key={booking.id} className={`timeline-item ${booking.status === 'pending' ? 'timeline-pending' : ''}`}><time>{formatTimeLabel(booking.time)}</time><div><strong>{booking.studentName || 'Unknown student'}</strong><span>{booking.company} · {booking.cabin} · {statusLabel(booking.status)}</span></div></div>) : <p className="empty-inline">No interviews today.</p>}
+            </div>
+          </div>
+          <div className="card admin-section analytics-card heatmap-card">
+            <div className="section-heading"><div><p className="admin-kicker">TODAY · 60 MINUTES</p><h3 className="serif">Availability heatmap</h3></div></div>
+            <div className="heatmap" style={{ gridTemplateColumns: `68px repeat(${CABINS.length}, minmax(40px, 1fr))` }}><div className="heatmap-label" /><div className="heatmap-cabins">{CABINS.map((cabin) => <span key={cabin}>{cabin}</span>)}</div>{heatmapTimes.map((time) => <React.Fragment key={time}><span className="heatmap-time">{formatTimeLabel(time)}</span>{CABINS.map((cabin) => { const slot = isSlotFree(cabin, todayStr(), time, 60); return <button key={`${cabin}-${time}`} className={`heatmap-cell ${slot.free ? 'free' : slot.disabled ? 'disabled' : 'busy'}`} title={`${cabin} ${formatTimeLabel(time)}: ${slot.free ? 'Free' : slot.disabled ? 'Unavailable' : 'Busy'}`} onClick={() => { setAdminSlotDate(todayStr()); setAdminTab('slots'); }} />; })}</React.Fragment>)}</div>
+            <div className="heatmap-legend"><span><i className="legend-dot free" />Free</span><span><i className="legend-dot busy" />Busy</span><span><i className="legend-dot disabled" />Unavailable</span></div>
+          </div>
+          <div className={`card admin-section analytics-card alert-card ${conflictBookings.length ? 'has-alerts' : ''}`}>
+            <div className="section-heading"><div><p className="admin-kicker">ACTION REQUIRED</p><h3 className="serif">Schedule alerts</h3></div><strong>{conflictBookings.length + pendingCount}</strong></div>
+            <div className="alert-list">
+              <button onClick={() => { setAdminFilter('pending'); setAdminDateFilter(null); setAdminTab('requests'); }}><span className="alert-icon pending">!</span><span><strong>{pendingCount} pending today</strong><small>Requests waiting for approval</small></span></button>
+              <button onClick={() => { setAdminFilter('all'); setAdminDateFilter(null); setAdminTab('requests'); }}><span className="alert-icon conflict">!</span><span><strong>{conflictBookings.length} overlapping booking{conflictBookings.length === 1 ? '' : 's'}</strong><small>Review cabin or time conflicts</small></span></button>
+            </div>
+          </div>
+        </section>
+
         {todayBookings.filter((booking) => booking.status !== 'cancelled' && booking.status !== 'rejected').length === 0 && (
           <div className="card empty-state" style={{ margin: '0 0 20px' }}>No interviews today.</div>
         )}
@@ -1407,7 +1562,7 @@ export default function App() {
                 >
                   <span>{Number(date.slice(-2))}</span>
                   {calendarDateCounts[date] ? (
-                    <span className="calendar-statuses" aria-label={`${calendarDateCounts[date].total} interviews`}>
+                    <span className="calendar-statuses" aria-label={`${calendarDateCounts[date].total} interviews`}><b>{calendarDateCounts[date].total}</b>
                       {Object.entries(calendarDateCounts[date].statuses).map(([status, count]) => (
                         <i key={status} className={`calendar-status status-${status}`} title={`${count} ${status}`} />
                       ))}
@@ -1607,7 +1762,25 @@ export default function App() {
                           {b.studentName} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>· {b.domain}</span>
                         </div>
                         <div style={{ color: 'var(--ink-soft)' }}>{b.phone}</div>
-                        <div style={{ marginTop: 4 }}>{b.company} · {b.round}</div>
+                        {editingCompanyBookingId === b.id ? (
+                          <form onSubmit={(e) => saveCompanyName(e, b)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                            <input
+                              className="search-input"
+                              value={editingCompanyName}
+                              onChange={(e) => setEditingCompanyName(e.target.value)}
+                              aria-label="Company name"
+                              autoFocus
+                            />
+                            <button className="btn btn-small btn-primary" disabled={loading}>Save</button>
+                            <button type="button" className="btn btn-small btn-outline" onClick={() => setEditingCompanyBookingId(null)}>Cancel</button>
+                            <span style={{ color: 'var(--ink-soft)' }}>· {b.round}</span>
+                          </form>
+                        ) : (
+                          <div style={{ marginTop: 4 }}>
+                            {b.company} · {b.round}{' '}
+                            <button type="button" className="link-btn" onClick={() => startCompanyEdit(b)}>Edit company</button>
+                          </div>
+                        )}
                         <div style={{ color: 'var(--ink-soft)' }}>
                           {b.cabin} · {formatDateLabel(b.date)} · {formatTimeLabel(b.time)} · {b.duration || 30} min · {b.timezone || 'local'}
                         </div>
@@ -1673,11 +1846,38 @@ export default function App() {
             {studentList.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No students registered yet.</p>
             ) : (
-              pagedStudents.map((s) => (
+              pagedStudents.map((s, index) => (
                 <div key={s.phone} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ fontSize: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.9rem' }}>
+                    <strong aria-label={`Student ${((adminStudentPage - 1) * PAGE_SIZE) + index + 1}`} style={{ minWidth: 20 }}>
+                      {((adminStudentPage - 1) * PAGE_SIZE) + index + 1}.
+                    </strong>
+                    <div>
                     <div style={{ fontWeight: 500 }}>{s.name} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>· {s.domain}</span></div>
                     <div style={{ color: 'var(--ink-soft)' }}>{s.phone}</div>
+                    {bookings.filter((booking) => booking.phone === s.phone).map((booking) => (
+                      <div key={booking.id} style={{ color: 'var(--ink-soft)', marginTop: 5 }}>
+                        {editingCompanyBookingId === booking.id ? (
+                          <form onSubmit={(e) => saveCompanyName(e, booking)} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <input
+                              className="search-input"
+                              value={editingCompanyName}
+                              onChange={(e) => setEditingCompanyName(e.target.value)}
+                              aria-label="Company name"
+                              autoFocus
+                            />
+                            <button className="btn btn-small btn-primary" disabled={loading}>Save</button>
+                            <button type="button" className="btn btn-small btn-outline" onClick={() => setEditingCompanyBookingId(null)}>Cancel</button>
+                          </form>
+                        ) : (
+                          <span>
+                            Booked company: <strong>{booking.company}</strong>{' '}
+                            <button type="button" className="link-btn" onClick={() => startCompanyEdit(booking)}>Edit</button>
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Badge text={s.active === false ? 'Disabled' : 'Active'} kind={s.active === false ? 'rejected' : 'approved'} />

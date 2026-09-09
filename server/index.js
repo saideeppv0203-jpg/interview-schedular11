@@ -30,9 +30,13 @@ if (DATABASE_URL) {
   dbConnection = null;
 }
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vishnavqa@gmail.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Vishnavqa02@';
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'dev-admin-token-change-me';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD || !ADMIN_TOKEN) {
+  throw new Error('ADMIN_EMAIL, ADMIN_PASSWORD, and ADMIN_TOKEN must be configured before starting the server.');
+}
 
 // Interview hours: 8:00 AM to 10:00 PM, in minutes from midnight
 const DAY_START_MIN = 8 * 60;
@@ -356,6 +360,10 @@ function requireAdmin(req, res, next) {
   if (!token || token !== ADMIN_TOKEN) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  function normalizePhone(phone) {
+    return String(phone || '').replace(/[^\d+]/g, '');
+  }
   next();
 }
 
@@ -402,10 +410,11 @@ app.post('/api/register', (req, res) => {
   if (!phone || !phone.trim()) {
     return res.status(400).json({ error: 'Phone number is required.' });
   }
-  const cleanPhone = phone.trim();
+  const cleanPhone = normalizePhone(phone);
 
-  if (db.students[cleanPhone]) {
-    const existing = db.students[cleanPhone];
+  const existingPhone = Object.keys(db.students).find((phone) => normalizePhone(phone) === cleanPhone);
+  if (existingPhone) {
+    const existing = db.students[existingPhone];
     if (existing.active === false) {
       return res.status(403).json({ error: 'Your account has been disabled by the admin. Contact them for help.' });
     }
@@ -527,9 +536,9 @@ app.post('/api/admin/login', (req, res) => {
 
 app.post('/api/admin/students', requireAdmin, (req, res) => {
   const { name, domain, phone } = req.body || {};
-  const cleanPhone = String(phone || '').trim();
+  const cleanPhone = normalizePhone(phone);
   if (!name || !domain || !cleanPhone) return res.status(400).json({ error: 'Name, domain, and phone are required.' });
-  if (db.students[cleanPhone]) return res.status(409).json({ error: 'A student with this phone number already exists.' });
+  if (Object.keys(db.students).some((phone) => normalizePhone(phone) === cleanPhone)) return res.status(409).json({ error: 'A student with this phone number already exists.' });
   const student = { name: String(name).trim(), domain: String(domain).trim(), phone: cleanPhone, active: true, registeredAt: new Date().toISOString() };
   db.students[cleanPhone] = student;
   persistData();
@@ -538,11 +547,23 @@ app.post('/api/admin/students', requireAdmin, (req, res) => {
 
 // Approve / reject a booking (admin only)
 app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
-  const { status, date, time, duration, phone, cabin, cancelReason } = req.body || {};
+  const { status, date, time, duration, phone, cabin, company, cancelReason } = req.body || {};
+  const hasCompanyChange = company !== undefined;
+  if (hasCompanyChange && !date && !time && !duration && !cabin) {
+    const booking = db.bookings.find((item) => item.id === req.params.id);
+    if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+    const cleanCompany = String(company).trim();
+    if (!cleanCompany) return res.status(400).json({ error: 'Company name is required.' });
+    booking.company = cleanCompany;
+    persistData();
+    return res.json({ booking });
+  }
   if (date || time || duration || cabin) {
     const dur = Number(duration || bookingDuration(req.params.id));
     const bookingToMove = db.bookings.find((b) => b.id === req.params.id);
     if (!bookingToMove) return res.status(404).json({ error: 'Booking not found.' });
+    const cleanCompany = hasCompanyChange ? String(company).trim() : null;
+    if (hasCompanyChange && !cleanCompany) return res.status(400).json({ error: 'Company name is required.' });
     const targetCabin = cabin || bookingToMove.cabin;
     if (!(db.cabins || DEFAULT_CABINS).includes(targetCabin)) return res.status(400).json({ error: 'Invalid cabin.' });
     if ((db.disabledCabins || []).includes(targetCabin)) return res.status(409).json({ error: `${targetCabin} is currently unavailable.` });
@@ -565,6 +586,7 @@ app.patch('/api/bookings/:id', requireAdmin, (req, res) => {
     bookingToMove.duration = dur;
     bookingToMove.cabin = targetCabin;
     if (phone) bookingToMove.phone = phone;
+    if (hasCompanyChange) bookingToMove.company = cleanCompany;
     const previousStatus = bookingToMove.status;
     if (status) bookingToMove.status = status;
     if (status === 'cancelled' && cancelReason) bookingToMove.cancelReason = String(cancelReason).trim();
