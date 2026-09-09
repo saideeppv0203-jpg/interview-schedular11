@@ -24,6 +24,8 @@ let dbConnection = new sqlite3.Database(DB_PATH);
 if (DATABASE_URL) {
   const postgresConfig = {
     connectionString: DATABASE_URL,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 10000,
     ssl: DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : undefined,
   };
   postgresPool = new Pool(postgresConfig);
@@ -910,14 +912,14 @@ if (fs.existsSync(clientDist)) {
 
 const PORT = process.env.PORT || 4000;
 initializeDatabase()
+  .catch((error) => {
+    console.error('Failed to initialize the database. Starting with empty local state:', error);
+    db = getDefaultData();
+  })
   .then(() => {
     removeExpiredCompletedBookings();
     setInterval(removeExpiredCompletedBookings, 15 * 60 * 1000);
     app.listen(PORT, () => {
       console.log(`Interview scheduler server running on port ${PORT}`);
     });
-  })
-  .catch((error) => {
-    console.error('Failed to initialize the database:', error);
-    process.exit(1);
   });
