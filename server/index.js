@@ -34,8 +34,9 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
-if (!ADMIN_EMAIL || !ADMIN_PASSWORD || !ADMIN_TOKEN) {
-  throw new Error('ADMIN_EMAIL, ADMIN_PASSWORD, and ADMIN_TOKEN must be configured before starting the server.');
+const adminConfigured = Boolean(ADMIN_EMAIL && ADMIN_PASSWORD && ADMIN_TOKEN);
+if (!adminConfigured) {
+  console.warn('Admin login is disabled until ADMIN_EMAIL, ADMIN_PASSWORD, and ADMIN_TOKEN are configured.');
 }
 
 // Interview hours: 8:00 AM to 10:00 PM, in minutes from midnight
@@ -522,6 +523,9 @@ app.post('/api/bookings', (req, res) => {
 
 // Admin login: returns a bearer token used for admin-only calls
 app.post('/api/admin/login', (req, res) => {
+  if (!adminConfigured) {
+    return res.status(503).json({ error: 'Admin login is not configured on the server.' });
+  }
   const { email, password } = req.body || {};
   if (
     email &&
