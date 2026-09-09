@@ -1860,28 +1860,6 @@ export default function App() {
                     <div>
                     <div style={{ fontWeight: 500 }}>{s.name} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>· {s.domain}</span></div>
                     <div style={{ color: 'var(--ink-soft)' }}>{s.phone}</div>
-                    {bookings.filter((booking) => booking.phone === s.phone).map((booking) => (
-                      <div key={booking.id} style={{ color: 'var(--ink-soft)', marginTop: 5 }}>
-                        {editingCompanyBookingId === booking.id ? (
-                          <form onSubmit={(e) => saveCompanyName(e, booking)} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <input
-                              className="search-input"
-                              value={editingCompanyName}
-                              onChange={(e) => setEditingCompanyName(e.target.value)}
-                              aria-label="Company name"
-                              autoFocus
-                            />
-                            <button className="btn btn-small btn-primary" disabled={loading}>Save</button>
-                            <button type="button" className="btn btn-small btn-outline" onClick={() => setEditingCompanyBookingId(null)}>Cancel</button>
-                          </form>
-                        ) : (
-                          <span>
-                            Booked company: <strong>{booking.company}</strong>{' '}
-                            <button type="button" className="link-btn" onClick={() => startCompanyEdit(booking)}>Edit</button>
-                          </span>
-                        )}
-                      </div>
-                    ))}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
