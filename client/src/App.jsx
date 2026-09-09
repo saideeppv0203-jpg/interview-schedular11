@@ -1914,13 +1914,17 @@ export default function App() {
             <div className="search-row">
               <input className="search-input" value={adminStudentSearch} onChange={(e) => { setAdminStudentSearch(e.target.value); setAdminStudentPage(1); }} placeholder="Search name, domain, or phone…" aria-label="Search students" />
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--ink-soft)', fontSize: '0.8rem', padding: '4px 8px' }}>
+              <strong style={{ color: 'var(--ink)' }}>Students</strong>
+              <span>{studentList.length} student{studentList.length === 1 ? '' : 's'}</span>
+            </div>
             {studentList.length === 0 ? (
               <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>No students registered yet.</p>
             ) : (
               pagedStudents.map((s, index) => (
                 <div key={s.phone} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.9rem' }}>
-                    <strong aria-label={`Student ${((adminStudentPage - 1) * PAGE_SIZE) + index + 1}`} style={{ minWidth: 20 }}>
+                    <strong aria-label={`Student number ${((adminStudentPage - 1) * PAGE_SIZE) + index + 1}`} style={{ minWidth: 28, color: 'var(--ink-soft)' }}>
                       {((adminStudentPage - 1) * PAGE_SIZE) + index + 1}.
                     </strong>
                     <div>
