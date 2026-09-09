@@ -1399,8 +1399,6 @@ export default function App() {
         rangesOverlap(other.time, other.duration || 30, booking.time, booking.duration || 30)
       ))
     ));
-    const heatmapTimes = slotsForDuration(60);
-
     return (
       <div className="container admin-container">
         <div className="admin-header">
@@ -1499,11 +1497,6 @@ export default function App() {
             <div className="timeline-list">
               {todayTimeline.length ? todayTimeline.map((booking) => <div key={booking.id} className={`timeline-item ${booking.status === 'pending' ? 'timeline-pending' : ''}`}><time>{formatTimeLabel(booking.time)}</time><div><strong>{booking.studentName || 'Unknown student'}</strong><span>{booking.company} · {booking.cabin} · {statusLabel(booking.status)}</span></div></div>) : <p className="empty-inline">No interviews today.</p>}
             </div>
-          </div>
-          <div className="card admin-section analytics-card heatmap-card">
-            <div className="section-heading"><div><p className="admin-kicker">TODAY · 60 MINUTES</p><h3 className="serif">Availability heatmap</h3></div></div>
-            <div className="heatmap" style={{ gridTemplateColumns: `68px repeat(${CABINS.length}, minmax(40px, 1fr))` }}><div className="heatmap-label" /><div className="heatmap-cabins">{CABINS.map((cabin) => <span key={cabin}>{cabin}</span>)}</div>{heatmapTimes.map((time) => <React.Fragment key={time}><span className="heatmap-time">{formatTimeLabel(time)}</span>{CABINS.map((cabin) => { const slot = isSlotFree(cabin, todayStr(), time, 60); return <button key={`${cabin}-${time}`} className={`heatmap-cell ${slot.free ? 'free' : slot.disabled ? 'disabled' : 'busy'}`} title={`${cabin} ${formatTimeLabel(time)}: ${slot.free ? 'Free' : slot.disabled ? 'Unavailable' : 'Busy'}`} onClick={() => { setAdminSlotDate(todayStr()); setAdminTab('slots'); }} />; })}</React.Fragment>)}</div>
-            <div className="heatmap-legend"><span><i className="legend-dot free" />Free</span><span><i className="legend-dot busy" />Busy</span><span><i className="legend-dot disabled" />Unavailable</span></div>
           </div>
           <div className={`card admin-section analytics-card alert-card ${conflictBookings.length ? 'has-alerts' : ''}`}>
             <div className="section-heading"><div><p className="admin-kicker">ACTION REQUIRED</p><h3 className="serif">Schedule alerts</h3></div><strong>{conflictBookings.length + pendingCount}</strong></div>

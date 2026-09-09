@@ -353,16 +353,6 @@ body {
 .timeline-item time { min-width: 62px; color: var(--accent-dark); font-size: .75rem; font-weight: 700; }
 .timeline-item div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .timeline-item span, .alert-list small { overflow: hidden; color: var(--ink-soft); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.heatmap { display: grid; grid-template-columns: 68px repeat(2, minmax(40px, 1fr)); gap: 4px; align-items: center; }
-.heatmap-cabins { display: contents; }
-.heatmap-cabins span { padding-bottom: 3px; color: var(--ink-soft); font-size: .68rem; text-align: center; }
-.heatmap-time { color: var(--ink-soft); font-size: .68rem; }
-.heatmap-cell { height: 21px; border-radius: 3px; background: var(--approved-soft); }
-.heatmap-cell.free { background: var(--approved); }
-.heatmap-cell.busy { background: var(--pending); }
-.heatmap-cell.disabled { background: var(--cancelled); }
-.heatmap-legend { display: flex; gap: 12px; margin-top: 10px; color: var(--ink-soft); font-size: .7rem; }
-.heatmap-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .legend-dot.free { background: var(--approved); }.legend-dot.busy { background: var(--pending); }.legend-dot.disabled { background: var(--cancelled); }
 .alert-card.has-alerts { border: 1px solid var(--pending-soft); }
