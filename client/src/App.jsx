@@ -8,6 +8,7 @@ const DURATIONS = [
   { value: 60, label: '1 hour' },
 ];
 const DAYS_AHEAD = 14;
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const ADMIN_CONTACT = 'vishnavqa@gmail.com';
 const APP_VERSION = '1.0.0';
 
@@ -308,7 +309,8 @@ export default function App() {
         const rec = data.students[savedPhone];
         if (rec && rec.active !== false) {
           setStudent(rec);
-          setView('portal');
+            localStorage.setItem('scheduler_student_activity', String(Date.now()));
+            setView('portal');
         }
       }).catch(() => setLoadError('We could not load your student account.'));
     }
@@ -328,6 +330,49 @@ export default function App() {
     }, 10000);
     return () => clearInterval(id);
   }, [adminToken]);
+
+  useEffect(() => {
+    if (!adminToken && !student) return undefined;
+
+    const activityKey = adminToken ? 'scheduler_admin_activity' : 'scheduler_student_activity';
+    const updateActivity = () => {
+      const timestamp = String(Date.now());
+      if (adminToken) {
+        sessionStorage.setItem(activityKey, timestamp);
+        sessionStorage.setItem('scheduler_admin_expires', String(Date.now() + INACTIVITY_TIMEOUT_MS));
+      } else {
+        localStorage.setItem(activityKey, timestamp);
+      }
+    };
+    const checkInactivity = () => {
+      const lastActivity = Number((adminToken ? sessionStorage : localStorage).getItem(activityKey) || 0);
+      if (!lastActivity || Date.now() - lastActivity >= INACTIVITY_TIMEOUT_MS) {
+        if (adminToken) {
+          setAdminToken(null);
+          sessionStorage.removeItem('scheduler_admin_token');
+          sessionStorage.removeItem('scheduler_admin_expires');
+          sessionStorage.removeItem(activityKey);
+          setView('admin-login');
+          setAdminError('You were signed out after 30 minutes of inactivity.');
+        } else {
+          setStudent(null);
+          localStorage.removeItem('scheduler_student_phone');
+          localStorage.removeItem(activityKey);
+          setView('student-auth');
+          setAuthError('You were signed out after 30 minutes of inactivity.');
+        }
+      }
+    };
+
+    updateActivity();
+    const events = ['pointerdown', 'keydown', 'touchstart'];
+    events.forEach((eventName) => window.addEventListener(eventName, updateActivity));
+    const timer = setInterval(checkInactivity, 10000);
+    return () => {
+      events.forEach((eventName) => window.removeEventListener(eventName, updateActivity));
+      clearInterval(timer);
+    };
+  }, [adminToken, student]);
 
   useEffect(() => {
     const id = setInterval(refresh, 15000);
@@ -370,6 +415,7 @@ export default function App() {
       });
       setStudent(rec);
       localStorage.setItem('scheduler_student_phone', rec.phone);
+      localStorage.setItem('scheduler_student_activity', String(Date.now()));
       await refresh();
       setView('portal');
     } catch (err) {
@@ -381,6 +427,7 @@ export default function App() {
   function logoutStudent() {
     setStudent(null);
     localStorage.removeItem('scheduler_student_phone');
+    localStorage.removeItem('scheduler_student_activity');
     setRegName(''); setRegDomain(''); setRegPhone(''); setAuthError('');
     setView('landing');
   }
@@ -439,7 +486,8 @@ export default function App() {
       const { token } = await apiPost('/admin/login', { email: adminEmail, password: adminPassword });
       setAdminToken(token);
       sessionStorage.setItem('scheduler_admin_token', token);
-      sessionStorage.setItem('scheduler_admin_expires', String(Date.now() + 30 * 60 * 1000));
+      sessionStorage.setItem('scheduler_admin_expires', String(Date.now() + INACTIVITY_TIMEOUT_MS));
+      sessionStorage.setItem('scheduler_admin_activity', String(Date.now()));
       await refresh();
       setView('admin');
     } catch (err) {
@@ -452,6 +500,7 @@ export default function App() {
     setAdminToken(null);
     sessionStorage.removeItem('scheduler_admin_token');
     sessionStorage.removeItem('scheduler_admin_expires');
+    sessionStorage.removeItem('scheduler_admin_activity');
     setAdminEmail(''); setAdminPassword(''); setAdminError('');
     setView('landing');
   }
