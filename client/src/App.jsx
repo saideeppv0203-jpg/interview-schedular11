@@ -161,7 +161,16 @@ function Badge({ text, kind }) {
 }
 
 function BrandMark() {
-  return <span className="brand-mark" aria-hidden="true"><span>✓</span></span>;
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false">
+        <path d="M7 7 8 3l4 2 4-2 1 4 2 1v2H5V8l2-1Z" fill="currentColor" />
+        <path d="M6 11c-2.7-.5-3.5 3.5-.7 4.1.5 3.1 3.2 5.1 6.7 5.1s6.2-2 6.7-5.1c2.8-.6 2-4.6-.7-4.1" fill="currentColor" />
+        <path d="M9 14h.1m5.8 0h.1M10 16.3c1.2.8 2.8.8 4 0" fill="none" stroke="var(--accent-dark)" strokeWidth="1.3" strokeLinecap="round" />
+        <path d="M12 10.3v2.2" fill="none" stroke="#b23a2e" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
 }
 
 function LoadingSkeletons() {
@@ -926,6 +935,15 @@ export default function App() {
       counts[cabin] = times.filter((time) => isSlotFree(cabin, selectedDate, time, duration).free).length;
       return counts;
     }, {});
+    const alternativeSlot = dateOptions
+      .flatMap((date) => DURATIONS.flatMap((option) => (
+        CABINS.some((cabin) => slotsForDuration(option.value).some((time) => (
+          !isPastSlot(date, time) && isSlotFree(cabin, date, time, option.value).free
+        )))
+          ? [{ date, duration: option.value }]
+          : []
+      )))
+      .find((option) => option.date !== selectedDate || option.duration !== duration);
     const upcomingApproved = myBookings.find((booking) => booking.status === 'approved' && new Date(`${booking.date}T${booking.time}:00`).getTime() > now);
     const countdownLabel = upcomingApproved ? (() => {
       const seconds = Math.max(0, Math.floor((new Date(`${upcomingApproved.date}T${upcomingApproved.time}:00`).getTime() - now) / 1000));
@@ -954,7 +972,7 @@ export default function App() {
       <div className="container">
         <div className="student-header">
           <div>
-            <h2 className="serif student-welcome-title">Welcome to <span>Placement Assist</span></h2>
+            <h2 className="serif student-welcome-title"><BrandMark /> Welcome to <span>Placement Assist</span></h2>
             <p className="student-greeting">Hello, <strong>{student.name}</strong></p>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{student.domain} · {student.phone}</p>
             <p className="loading-text">Last refreshed: {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</p>
@@ -1011,12 +1029,20 @@ export default function App() {
           </div>
         </section>
 
-        <div className="card student-upcoming" style={{ marginBottom: 16 }}>
-          <strong>Upcoming interview</strong>
+        <section className="card student-upcoming" aria-label="Next approved interview">
+          <div className="student-upcoming-heading">
+            <div><p className="admin-kicker">NEXT CONFIRMED INTERVIEW</p><strong>Coming up</strong></div>
+            {upcomingApproved && <Badge text="Approved" kind="approved" />}
+          </div>
           {upcomingApproved ? (
-            <p style={{ margin: '8px 0 0', fontSize: '0.9rem' }}>{upcomingApproved.company} · {formatDateLabel(upcomingApproved.date)} at {formatTimeLabel(upcomingApproved.time)} — starts in <strong>{countdownLabel}</strong></p>
-          ) : <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: '0.85rem' }}>No approved interviews scheduled yet.</p>}
-        </div>
+            <div className="student-upcoming-details">
+              <strong className="student-upcoming-company">{upcomingApproved.company}</strong>
+              <span>{formatDateLabel(upcomingApproved.date)} · {formatTimeLabel(upcomingApproved.time)}</span>
+              <span>{upcomingApproved.cabin} · {upcomingApproved.round} · {upcomingApproved.duration || 30} min</span>
+              <p>Starts in <strong>{countdownLabel}</strong></p>
+            </div>
+          ) : <p className="student-upcoming-empty">No approved interviews scheduled yet. New requests will appear in your schedule once submitted.</p>}
+        </section>
 
         <div className="schedule-view-toggle" role="tablist" aria-label="Schedule view">
           <button className={`admin-tab ${studentScheduleView === 'calendar' ? 'active' : ''}`} onClick={() => setStudentScheduleView('calendar')}>Calendar</button>
@@ -1077,6 +1103,12 @@ export default function App() {
           </div>
         </div>
         <div className="student-booking-panel">
+        <ol className="booking-steps" aria-label="Booking steps">
+          <li className="current"><span>1</span><strong>Choose date</strong></li>
+          <li><span>2</span><strong>Pick a time</strong></li>
+          <li><span>3</span><strong>Enter details</strong></li>
+          <li><span>4</span><strong>Send request</strong></li>
+        </ol>
         <div className="student-booking-controls" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
         <div className="field student-date-field" style={{ maxWidth: 220 }}>
             <label>Pick a date</label>
@@ -1157,7 +1189,20 @@ export default function App() {
         </div>
         {availableSlotCount === 0 && (
           <div className="card empty-state" role="status">
-            No available slots for {formatDateLabel(selectedDate)}. Try another date or choose a different duration. <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a> if you need help.
+            <strong>No available slots for {formatDateLabel(selectedDate)}.</strong>
+            <span>Try another date or slot length.</span>
+            <div className="availability-alternatives">
+              {alternativeSlot && <button className="btn btn-small btn-outline" onClick={() => {
+                setSelectedDate(alternativeSlot.date);
+                setDuration(alternativeSlot.duration);
+                setStudentCalendarMonth(new Date(`${alternativeSlot.date}T00:00:00`));
+              }}>
+                {alternativeSlot.date === selectedDate
+                  ? `Try ${alternativeSlot.duration === 60 ? '1 hour' : '30 minutes'}`
+                  : `View ${formatDateLabel(alternativeSlot.date)} · ${alternativeSlot.duration === 60 ? '1 hour' : '30 minutes'}`}
+              </button>}
+              <a href={`mailto:${ADMIN_CONTACT}`}>Contact admin</a>
+            </div>
           </div>
         )}
         </div>
@@ -1513,6 +1558,12 @@ export default function App() {
             </div>
             <span className="attention-count">{attentionBookings.length}</span>
           </div>
+          {pendingRequests > 0 && <button className="btn btn-small btn-primary attention-review" onClick={() => {
+            setAdminTab('requests');
+            setAdminFilter('pending');
+            setAdminDateFilter(null);
+            setAdminRequestPage(1);
+          }}>Review {pendingRequests} pending request{pendingRequests === 1 ? '' : 's'}</button>}
           {attentionBookings.length === 0 ? (
             <p className="empty-inline">Everything is up to date.</p>
           ) : attentionBookings.map((booking) => (
@@ -1960,8 +2011,8 @@ export default function App() {
         {adminTab === 'slots' && (
           <div>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: 12 }}>
-              Click an open slot to mark it unavailable (e.g. cabin closed, staff unavailable). Click again to reopen it.
-              Slots already booked by a student can't be blocked here — reject their request first if needed.
+              Use the cabin controls to close or reopen an entire cabin for new bookings.
+              Existing interviews remain scheduled and can still be managed. Use the slot controls for individual time blocks.
             </p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
               <div className="field" style={{ maxWidth: 220 }}>
@@ -1981,11 +2032,16 @@ export default function App() {
               {CABINS.map((cabin) => {
                 const enabled = !disabledCabins.includes(cabin);
                 const activeCount = activeCabinCounts[cabin] || 0;
+                const availableCount = adminTimes.filter((time) => (
+                  !isPastSlot(adminSlotDate, time) && isSlotFree(cabin, adminSlotDate, time, adminSlotDuration).free
+                )).length;
+                const cabinStatus = !enabled ? 'Disabled' : availableCount === 0 ? 'Fully booked' : 'Open';
                 const removable = !DEFAULT_CABINS.includes(cabin);
                 return <div key={cabin} className="card cabin-row">
-                  <span><strong>{cabin}</strong><small>{enabled ? 'Enabled for booking' : 'Disabled for all new bookings'}</small>{enabled && activeCount > 0 && <small className="warning-text">Has {activeCount} active interview{activeCount === 1 ? '' : 's'} — reschedule or cancel first.</small>}</span>
+                  <span className="cabin-row-info"><strong>{cabin}</strong><small>{availableCount} open slot{availableCount === 1 ? '' : 's'} on {formatDateLabel(adminSlotDate)} · {activeCount} upcoming interview{activeCount === 1 ? '' : 's'}</small>{!enabled && activeCount > 0 && <small className="warning-text">Existing interviews are unchanged.</small>}</span>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-small btn-outline" disabled={loading || (enabled && activeCount > 0)} onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button>
+                    <Badge text={cabinStatus} kind={!enabled ? 'cancelled' : availableCount === 0 ? 'pending' : 'approved'} />
+                    <button className="btn btn-small btn-outline" disabled={loading} onClick={() => toggleCabin(cabin)}>{enabled ? 'Disable cabin' : 'Enable cabin'}</button>
                     {removable && <button className="btn btn-small btn-outline" style={{ color: 'var(--danger)' }} disabled={loading || activeCount > 0} onClick={() => deleteCabin(cabin)}>Delete cabin</button>}
                   </div>
                 </div>;

@@ -4,7 +4,16 @@ services:
     runtime: node
     buildCommand: npm install && npm run build
     startCommand: node server/index.js
+    healthCheckPath: /api/health
     envVars:
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: DATA_DIR
         value: /var/data
     disk:

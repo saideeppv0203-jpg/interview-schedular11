@@ -762,12 +762,6 @@ app.patch('/api/cabins/:cabin', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Cabin and enabled state are required.' });
   }
   const disabled = new Set(db.disabledCabins || []);
-  if (!req.body.enabled) {
-    const activeInterview = db.bookings.find((booking) => booking.cabin === cabin && booking.status !== 'rejected' && booking.status !== 'cancelled' && booking.date >= new Date().toISOString().slice(0, 10));
-    if (activeInterview) {
-      return res.status(409).json({ error: `${cabin} has active interviews. Reschedule or cancel them before disabling the cabin.` });
-    }
-  }
   if (req.body.enabled) disabled.delete(cabin); else disabled.add(cabin);
   db.disabledCabins = Array.from(disabled);
   persistData();

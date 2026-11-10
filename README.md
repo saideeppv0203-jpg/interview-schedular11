@@ -85,6 +85,11 @@ The simplest option is a host that runs a persistent Node process, such as
    (don't commit `.env` to git — it's already git-ignored).
 7. Deploy. The URL the host gives you is your live site.
 
+If your Render plan does not support persistent disks, use a managed PostgreSQL
+database instead: set `DATABASE_URL` in the Render environment variables and
+leave the `DATA_DIR` disk configuration unused. SQLite storage on an ephemeral
+filesystem can be reset during restarts or redeploys.
+
 ### Important: data persistence
 
 For production, the recommended setup is a managed PostgreSQL database.
